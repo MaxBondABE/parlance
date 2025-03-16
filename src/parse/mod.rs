@@ -158,6 +158,19 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
             })
         }
     }
+    /// Upgrade recoverable errors to the given permanent error.
+    fn fail_with<F: Clone + From<Failure>>(self, err: F) -> impl Parser<Input, Output, Error, F>
+    where
+        Self: Sized,
+    {
+        move |input: &Input| {
+            self.parse(input).map_err(|e| match e {
+                ParserError::Error(e) => ParserError::Failure(err.clone()),
+                ParserError::Failure(e) => ParserError::Failure(e.into()),
+                ParserError::Incomplete(e) => ParserError::Incomplete(e.into()),
+            })
+        }
+    }
     /// Returns None on a recoverable error.
     fn opt(self) -> impl Parser<Input, Option<Output>, Error, Failure>
     where
