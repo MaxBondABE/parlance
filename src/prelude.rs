@@ -9,5 +9,8 @@ pub use crate::parse::Parser;
 // avoid polluting namespace.
 pub use crate::{
     parse::{Choice as _, Compose as _, FuseSequence as _, Sequence as _},
-    util::rotate::{Rotate as _, RotateFn as _},
+    util::{
+        not_found::{OrIncomplete as _, OrNotFound as _},
+        rotate::{Rotate as _, RotateFn as _},
+    },
 };

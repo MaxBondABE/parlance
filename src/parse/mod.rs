@@ -4,50 +4,32 @@ use crate::primitives::whitespace::whitespace;
 
 mod choice;
 mod compose;
+mod err;
 mod fuse;
 mod sequence;
+mod streaming;
 
-pub use choice::Choice;
-pub use compose::Compose;
+pub use choice::{Choice, StreamingChoice};
+pub use compose::{Compose, StreamingCompose};
+pub use err::{Incomplete, Never, NotFound};
 pub use fuse::{Fusable, FuseSequence};
-pub use sequence::{SeparatedSequence, Sequence};
+pub use sequence::{SeparatedSequence, Sequence, StreamingSequence};
+pub use streaming::{
+    ErrorWasIncomplete, IntoStreamingParser, IntoStreamingResult, StreamingError, StreamingOk,
+    StreamingParser, StreamingResult,
+};
 
 pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
     fn parse(&self, input: &Input) -> ParserResult<Input, Output, Error, Failure>;
-    fn to<O: From<Output>, E: From<Error>, F: From<Failure>>(self) -> impl Parser<Input, O, E, F>
-    where
-        Self: Sized,
-    {
-        move |input: &Input| match self.parse(input) {
-            Ok((remaining, o)) => Ok((remaining, o.into())),
-            Err(ParserError::Error(e)) => Err(ParserError::Error(e.into())),
-            Err(ParserError::Incomplete(e)) => Err(ParserError::Incomplete(e.into())),
-            Err(ParserError::Failure(e)) => Err(ParserError::Failure(e.into())),
-        }
-    }
-    fn as_output<O: From<Output>>(self) -> impl Parser<Input, O, Error, Failure>
-    where
-        Self: Sized,
-    {
-        self.map(From::from)
-    }
-    fn as_error<E: From<Error>>(self) -> impl Parser<Input, Output, E, Failure>
-    where
-        Self: Sized,
-    {
-        self.map_errors(From::from)
-    }
-    fn as_failure<F: From<Failure>>(self) -> impl Parser<Input, Output, Error, F>
-    where
-        Self: Sized,
-    {
-        self.map_failures(From::from)
-    }
     fn map<O, Func: Fn(Output) -> O>(self, f: Func) -> impl Parser<Input, O, Error, Failure>
     where
         Self: Sized,
     {
-        move |input: &Input| self.parse(input).map(|(r, o)| (r, f(o)))
+        move |input: &Input| match self.parse(input) {
+            Ok((o, remaining)) => Ok((f(o), remaining)),
+            Err(ParserError::Error(e)) => Err(ParserError::Error(e)),
+            Err(ParserError::Failure(e)) => Err(ParserError::Failure(e)),
+        }
     }
     fn map_err<E, F, Func: Fn(ParserError<Error, Failure>) -> ParserError<E, F>>(
         self,
@@ -69,7 +51,6 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
             self.parse(input).map_err(|e| match e {
                 ParserError::Error(e) => ParserError::Error(f(e)),
                 ParserError::Failure(e) => ParserError::Failure(e),
-                ParserError::Incomplete(e) => ParserError::Incomplete(e),
             })
         }
     }
@@ -83,10 +64,38 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
         move |input: &Input| {
             self.parse(input).map_err(|e| match e {
                 ParserError::Failure(e) => ParserError::Failure(f(e)),
-                ParserError::Incomplete(e) => ParserError::Incomplete(f(e)),
                 ParserError::Error(e) => ParserError::Error(e),
             })
         }
+    }
+    /// Utility to normalize a parser to an equivalent signature.
+    fn to<O: From<Output>, E: From<Error>, F: From<Failure>>(self) -> impl Parser<Input, O, E, F>
+    where
+        Self: Sized,
+    {
+        move |input: &Input| match self.parse(input) {
+            Ok((o, remaining)) => Ok((o.into(), remaining)),
+            Err(ParserError::Error(e)) => Err(ParserError::Error(e.into())),
+            Err(ParserError::Failure(e)) => Err(ParserError::Failure(e.into())),
+        }
+    }
+    fn to_output<O: From<Output>>(self) -> impl Parser<Input, O, Error, Failure>
+    where
+        Self: Sized,
+    {
+        self.map(From::from)
+    }
+    fn to_error<E: From<Error>>(self) -> impl Parser<Input, Output, E, Failure>
+    where
+        Self: Sized,
+    {
+        self.map_errors(From::from)
+    }
+    fn to_failure<F: From<Failure>>(self) -> impl Parser<Input, Output, Error, F>
+    where
+        Self: Sized,
+    {
+        self.map_failures(From::from)
     }
     fn with_error<E: Clone>(self, err: E) -> impl Parser<Input, Output, E, Failure>
     where
@@ -118,20 +127,8 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
     {
         self.map(move |_| output.clone())
     }
-    /// Transform incompletes into failures.
-    fn complete(self) -> impl Parser<Input, Output, Error, Failure>
-    where
-        Self: Sized,
-    {
-        move |input: &Input| {
-            self.parse(input).map_err(|e| match e {
-                ParserError::Incomplete(e) | ParserError::Failure(e) => ParserError::Failure(e),
-                ParserError::Error(e) => ParserError::Error(e),
-            })
-        }
-    }
     /// Upgrade recoverable errors to permanent failures.
-    fn fail(self) -> impl Parser<Input, Output, Error, Failure>
+    fn or_fail(self) -> impl Parser<Input, Output, Error, Failure>
     where
         Self: Sized,
         Failure: From<Error>,
@@ -140,12 +137,36 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
             self.parse(input).map_err(|e| match e {
                 ParserError::Error(e) => ParserError::Failure(e.into()),
                 ParserError::Failure(e) => ParserError::Failure(e),
-                ParserError::Incomplete(e) => ParserError::Incomplete(e),
+            })
+        }
+    }
+    /// Upgrade recoverable errors to permanent failures.
+    fn or_fail_with<F: Clone + From<Failure>>(self, err: F) -> impl Parser<Input, Output, Error, F>
+    where
+        Self: Sized,
+    {
+        move |input: &Input| {
+            self.parse(input).map_err(|e| match e {
+                ParserError::Error(e) => ParserError::Failure(err.clone()),
+                ParserError::Failure(e) => ParserError::Failure(e.into()),
+            })
+        }
+    }
+    /// Upgrade recoverable errors to the given permanent error.
+    fn or_fail_as<F, Func: Fn() -> F>(self, f: Func) -> impl Parser<Input, Output, Error, F>
+    where
+        Self: Sized,
+    {
+        move |input: &Input| {
+            self.parse(input).map_err(|e| match e {
+                ParserError::Error(e) => ParserError::Failure(f()),
+                ParserError::Failure(e) => ParserError::Failure(f()),
             })
         }
     }
     /// Downgrade permanent failures into recoverable errors.
-    fn no_fail(self) -> impl Parser<Input, Output, Error, Failure>
+    /// NB: Failures inside of an `Incomplete` variant are untouched.
+    fn no_fail(self) -> impl Parser<Input, Output, Error, Never>
     where
         Self: Sized,
         Error: From<Failure>,
@@ -154,20 +175,6 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
             self.parse(input).map_err(|e| match e {
                 ParserError::Failure(e) => ParserError::Error(e.into()),
                 ParserError::Error(e) => ParserError::Error(e),
-                ParserError::Incomplete(e) => ParserError::Incomplete(e),
-            })
-        }
-    }
-    /// Upgrade recoverable errors to the given permanent error.
-    fn fail_with<F: Clone + From<Failure>>(self, err: F) -> impl Parser<Input, Output, Error, F>
-    where
-        Self: Sized,
-    {
-        move |input: &Input| {
-            self.parse(input).map_err(|e| match e {
-                ParserError::Error(e) => ParserError::Failure(err.clone()),
-                ParserError::Failure(e) => ParserError::Failure(e.into()),
-                ParserError::Incomplete(e) => ParserError::Incomplete(e.into()),
             })
         }
     }
@@ -178,9 +185,9 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
         Input: Clone,
     {
         move |input: &Input| match self.parse(input) {
-            Ok((remaining, x)) => Ok((remaining, Some(x))),
-            Err(ParserError::Error(_)) => Ok((input.clone(), None)),
-            Err(e) => Err(e),
+            Ok((x, remaining)) => Ok((Some(x), remaining)),
+            Err(ParserError::Error(_)) => Ok((None, input.clone())),
+            Err(ParserError::Failure(e)) => Err(ParserError::Failure(e)),
         }
     }
     fn and<OtherOutput, Other: Parser<Input, OtherOutput, Error, Failure>>(
@@ -195,7 +202,7 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
     fn or<Other: Parser<Input, Output, Error, Failure>>(
         self,
         other: Other,
-    ) -> impl Parser<Input, Output, Error, Failure>
+    ) -> impl Parser<Input, Output, NotFound, Failure>
     where
         Self: Sized,
     {
@@ -212,13 +219,13 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
     }
 }
 
-pub type ParserResult<I, O, E = NotFound, F = Never> = Result<(I, O), ParserError<E, F>>;
+pub type ParserResult<Input, Output, Error = NotFound, Failure = Never> =
+    Result<(Output, Input), ParserError<Error, Failure>>;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
-pub enum ParserError<E, F> {
-    Incomplete(F),
-    Error(E),
-    Failure(F),
+pub enum ParserError<Error, Failure> {
+    Error(Error),
+    Failure(Failure),
 }
 impl<E: fmt::Debug, F: fmt::Debug> fmt::Debug for ParserError<E, F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -228,9 +235,6 @@ impl<E: fmt::Debug, F: fmt::Debug> fmt::Debug for ParserError<E, F> {
             }
             ParserError::Failure(e) => {
                 f.write_fmt(format_args!("Parsing error: Permanent failure {:?}", e))
-            }
-            ParserError::Incomplete(e) => {
-                f.write_fmt(format_args!("Parsing error: Input is incomplete {:?}", e))
             }
         }
     }
@@ -248,19 +252,3 @@ impl<
         self(input)
     }
 }
-
-/// A typical recoverable error
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct NotFound;
-
-/// An error or failure which is returned by any code branch. A `From`
-/// implementation should consist only of `unreachable!()`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Never(Neverever);
-
-/// A type which is not exported and prevents foreign crates from ever creating
-/// a Never value.
-/// NB: This does not prevent a programmer working within this crate from creating
-/// a `Never`. This must be enforced via code review.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct Neverever;

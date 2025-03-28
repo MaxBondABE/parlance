@@ -128,6 +128,9 @@ impl TransformContent for SharedString {
     }
 
     fn append_content<T: AsRef<str>>(&self, content: T) -> Self::Transformed {
-        todo!()
+        let mut s = String::with_capacity(self.len() + content.as_ref().len());
+        s.push_str(self.as_str());
+        s.push_str(content.as_ref());
+        Self::new(s)
     }
 }

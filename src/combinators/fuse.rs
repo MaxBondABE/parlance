@@ -5,9 +5,8 @@ macro_rules! fuse (
             {
                 use $crate::parse::{Sequence, FuseSequence};
                 fn fuse_impl<I: $crate::input::Input>(s: &I) -> $crate::parse::ParserResult<I, I> {
-                    if let Ok((_, len)) = $x.output_len().parse(&s.as_str()) {
-                        let (output, remaining) = s.split_at(len);
-                        Ok((remaining, output))
+                    if let Ok((len, _)) = $x.output_len().parse(&s.as_str()) {
+                        Ok(s.split_at(len))
                     } else {
                         Err($crate::parse::ParserError::Error($crate::parse::NotFound))
                     }
@@ -26,12 +25,12 @@ mod test {
 
     #[test]
     fn simple() {
-        assert_eq!(fuse!(("a", "b")).parse(&"abc"), Ok(("c", "ab")));
+        assert_eq!(fuse!(("a", "b")).parse(&"abc"), Ok(("ab", "c")));
 
         fn foo<'a, 'b>(s: &'a &'b str) -> ParserResult<&'b str, &'b str> {
-            return Ok((*s, ""));
+            return Ok(("", *s));
         }
-        assert_eq!(fuse!(("a", "b", foo)).parse(&"abc"), Ok(("c", "ab")))
+        assert_eq!(fuse!(("a", "b", foo)).parse(&"abc"), Ok(("ab", "c")))
     }
 
 }

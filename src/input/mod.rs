@@ -55,6 +55,9 @@ pub trait Input: Clone + fmt::Debug {
             .find(|(_, c)| predicate(*c))
             .map(|(i, _)| self.split_at(i))
     }
+    fn take_all(&self) -> (Self, Self) {
+        self.split_at(self.len())
+    }
     fn skip(&self, count: usize) -> Self {
         self.slice(count..self.len())
     }

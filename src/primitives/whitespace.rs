@@ -1,10 +1,13 @@
 use crate::{
     input::Input,
-    parse::{NotFound, Parser, ParserResult},
+    parse::{IntoStreamingResult, NotFound, Parser, ParserResult, StreamingResult},
+    util::conditional_transforms::{CompleteIf, EitherCompleteIf, OrNotFound},
 };
 
-use super::take::take_while;
-
 pub fn whitespace<I: Input>(s: &I) -> ParserResult<I, I> {
-    take_while(|c| c.is_whitespace()).parse(s)
+    s.take_while(|c| c.is_whitespace()).ok_or_not_found()
+}
+
+pub fn whitespace_stream<I: Input>(s: &I) -> StreamingResult<I, I> {
+    whitespace.parse(s).has_stopped()
 }

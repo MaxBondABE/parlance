@@ -263,7 +263,7 @@ fn line_indexes(s: &str) -> Box<[usize]> {
     let mut lines = vec![0];
     let mut remaining = s;
     while !remaining.is_empty() {
-        let (r, l) = line.parse(&remaining).unwrap();
+        let (l, r) = line.parse(&remaining).unwrap();
         lines.push(lines.last().unwrap() + l.len());
         remaining = r;
     }
@@ -337,7 +337,12 @@ impl TransformContent for Span {
     }
 
     fn append_content<T: AsRef<str>>(&self, content: T) -> Self::Transformed {
-        todo!()
+        let (line, column) = self.position();
+        let mut s = String::with_capacity(self.len() + content.as_ref().len());
+        s.push_str(self.as_str());
+        s.push_str(content.as_ref());
+
+        TransformedSpan::new(self.id(), line, column, s)
     }
 }
 impl TransformContent for TransformedSpan {
@@ -348,7 +353,10 @@ impl TransformContent for TransformedSpan {
     }
 
     fn append_content<T: AsRef<str>>(&self, content: T) -> Self::Transformed {
-        todo!()
+        let mut s = String::with_capacity(self.len() + content.as_ref().len());
+        s.push_str(self.as_str());
+        s.push_str(content.as_ref());
+        Self::new(&self.id, self.line, self.column, s)
     }
 }
 
@@ -385,7 +393,7 @@ mod test {
     #[test]
     fn start_of_line_locations() {
         let s = Span::anonymous("foo\nbar");
-        let (second_line, first_line) = line.parse(&s).unwrap();
+        let (first_line, second_line) = line.parse(&s).unwrap();
 
         assert_eq!(first_line.position(), (1, 1));
         assert_eq!(second_line.position(), (2, 1));
@@ -394,7 +402,7 @@ mod test {
     #[test]
     fn column_2_locations() {
         let s = Span::anonymous("foo\nbar");
-        let (second_line, first_line) = line.parse(&s).unwrap();
+        let (first_line, second_line) = line.parse(&s).unwrap();
         let first_line_col1 = first_line.skip(1);
         let second_line_col1 = second_line.skip(1);
 

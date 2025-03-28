@@ -1,7 +1,4 @@
-use crate::{
-    input::Input,
-    util::{rotate::Rotate, tuples::implement_for_tuples},
-};
+use crate::{input::Input, util::tuples::implement_for_tuples};
 
 use super::{Parser, Sequence};
 
@@ -17,8 +14,8 @@ impl<I: Input, O: Fusable, E, F, T: Sequence<I, O, E, F>> FuseSequence<I, O, E, 
     fn fuse(self) -> impl Parser<I, I, E, F> {
         let parser = self.output_len();
         move |input: &I| {
-            let (_, len) = parser.parse(input)?;
-            Ok(input.split_at(len).rot())
+            let (len, _) = parser.parse(input)?;
+            Ok(input.split_at(len))
         }
     }
 }

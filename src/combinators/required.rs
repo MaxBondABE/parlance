@@ -11,7 +11,7 @@ pub fn required_or<I, O, E, F, P: Parser<I, Option<O>, E, F>, BuildError: Fn() -
     err: BuildError,
 ) -> impl Parser<I, O, E, F> {
     move |input: &I| match p.parse(input)? {
-        (remaining, Some(output)) => Ok((remaining, output)),
+        (Some(output), remaining) => Ok((output, remaining)),
         _ => Err(ParserError::Error(err())),
     }
 }

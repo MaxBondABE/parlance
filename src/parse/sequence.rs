@@ -1,6 +1,12 @@
-use crate::{primitives::whitespace::whitespace, util::tuples::implement_for_tuples};
+use crate::{
+    primitives::whitespace::{whitespace, whitespace_stream},
+    util::{conditional_transforms::NoPartial, tuples::implement_for_tuples},
+};
 
-use super::{Fusable, Never, NotFound, Parser};
+use super::{
+    Fusable, Incomplete, IntoStreamingParser, Never, NotFound, Parser, StreamingError, StreamingOk,
+    StreamingParser,
+};
 
 /// A tuple of parsers, applied serially.
 pub trait Sequence<Input, Output, Error = NotFound, Failure = Never> {
@@ -17,6 +23,24 @@ pub trait Sequence<Input, Output, Error = NotFound, Failure = Never> {
         Input: crate::input::Input,
     {
         self.with_sep::<Input, _>(whitespace)
+    }
+}
+
+/// A tuple of streaming parsers, applied serially.
+pub trait StreamingSequence<Input, Output, Error = NotFound, Failure = Never> {
+    fn and(self) -> impl StreamingParser<Input, Output, Error, Failure>;
+    fn with_sep<O, P>(self, sep: P) -> SeparatedSequence<Self, P>
+    where
+        Self: Sized,
+    {
+        SeparatedSequence { seq: self, sep }
+    }
+    fn whitespace(self) -> SeparatedSequence<Self, impl StreamingParser<Input, Input>>
+    where
+        Self: Sized,
+        Input: crate::input::Input,
+    {
+        self.with_sep::<Input, _>(whitespace_stream)
     }
 }
 
@@ -46,19 +70,19 @@ macro_rules! sequence_impl (
             {
                 fn and(self) -> impl Parser<Input, ([<Output $first>], $([<Output $mid>],)* [<Output $last>]), Error, Failure> {
                     move |input: &Input| {
-                        let (remaining, [<output_ $first>]) = self.$first.parse(input)?;
+                        let ([<output_ $first>], remaining) = self.$first.parse(input)?;
                         $(
-                            let (remaining, [<output_ $mid>]) = self.$mid.parse(&remaining)?;
+                            let ([<output_ $mid>], remaining) = self.$mid.parse(&remaining)?;
                         )*
-                        let (remaining, [<output_ $last>]) = self.$last.parse(&remaining)?;
+                        let ([<output_ $last>], remaining) = self.$last.parse(&remaining)?;
 
                         Ok((
-                            remaining,
                             (
                                 [<output_ $first>],
                                 $([<output_ $mid>], )*
                                 [<output_ $last>],
-                            )
+                            ),
+                            remaining
                         ))
                     }
                 }
@@ -83,21 +107,21 @@ macro_rules! sequence_impl (
             {
                 fn and(self) -> impl Parser<Input, ([<Output $first>], $([<Output $mid>], )* [<Output $last>]), Error, Failure> {
                     move |input: &Input| {
-                        let (remaining, [<output_ $first>]) = self.seq.$first.parse(input)?;
+                        let ([<output_ $first>], remaining) = self.seq.$first.parse(input)?;
                         $(
-                            let (remaining, _) = self.sep.parse(&remaining)?;
-                            let (remaining, [<output_ $mid>]) = self.seq.$mid.parse(&remaining)?;
+                            let (_, remaining) = self.sep.parse(&remaining)?;
+                            let ([<output_ $mid>], remaining) = self.seq.$mid.parse(&remaining)?;
                         )*
-                        let (remaining, _) = self.sep.parse(&remaining)?;
-                        let (remaining, [<output_ $last>]) = self.seq.$last.parse(&remaining)?;
+                        let (_, remaining) = self.sep.parse(&remaining)?;
+                        let ([<output_ $last>], remaining) = self.seq.$last.parse(&remaining)?;
 
                         Ok((
-                            remaining,
                             (
                                 [<output_ $first>],
                                 $([<output_ $mid>], )*
                                 [<output_ $last>],
-                            )
+                            ),
+                            remaining
                         ))
                     }
                 }
@@ -105,6 +129,49 @@ macro_rules! sequence_impl (
                     panic!("This sequence has already been assigned a separator")
                 }
             }
+
+            impl<
+                Input,
+                Error,
+                Failure: From<Incomplete>,
+                [<Output $first>],
+                [<P $first>]: StreamingParser<Input, [<Output $first>], Error, Failure>,
+                $(
+                    [<Output $mid>],
+                    [<P $mid>]: StreamingParser<Input, [<Output $mid>], Error, Failure>,
+                )*
+                [<Output $last>],
+                [<P $last>]: StreamingParser<Input, [<Output $last>], Error, Failure>,
+            >
+            StreamingSequence<Input, ([<Output $first>], $([<Output $mid>], )* [<Output $last>]), Error, Failure>
+            for ([<P $first>],  $([<P $mid>], )* [<P $last>])
+            {
+                fn and(self) -> impl StreamingParser<Input, ([<Output $first>], $([<Output $mid>],)* [<Output $last>]), Error, Failure> {
+                    move |input: &Input| {
+                        let StreamingOk::Complete([<output_ $first>], remaining) = self.$first.parse_stream(input).no_partial()? else {
+                            unreachable!()
+                        };
+                        $(
+                            let StreamingOk::Complete([<output_ $mid>], remaining) = self.$mid.parse_stream(input).no_partial()? else {
+                                unreachable!()
+                            };
+                        )*
+                        let StreamingOk::Complete([<output_ $last>], remaining) = self.$last.parse_stream(input).no_partial()? else {
+                            unreachable!()
+                        };
+
+                        Ok(StreamingOk::Complete(
+                            (
+                                [<output_ $first>],
+                                $([<output_ $mid>], )*
+                                [<output_ $last>],
+                            ),
+                            remaining
+                        ))
+                    }
+                }
+            }
+
         }
     }
 );

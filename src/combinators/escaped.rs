@@ -16,11 +16,11 @@ where
     I::Transformed: TransformContent<Transformed = I::Transformed>,
 {
     move |input: &I| {
-        let (mut remaining, o) = esc.parse(input)?;
+        let (o, mut remaining) = esc.parse(input)?;
         let mut output = input.to_content(o.as_str().to_string());
         while !remaining.is_empty() {
             match esc.parse(&remaining) {
-                Ok((r, o)) => {
+                Ok((o, r)) => {
                     output = output.append_content(o);
                     remaining = r;
                 }
@@ -29,7 +29,7 @@ where
             }
         }
 
-        Ok((remaining, output))
+        Ok((output, remaining))
     }
 }
 
@@ -59,8 +59,6 @@ pub struct InvalidEscapeSequence;
 macro_rules! escape_character (
     ($esc: literal, $($seq: literal)*) => {
         {
-            use $crate::util::rotate::Rotate;
-
             fn escape_impl<I: $crate::input::Input>(s: &I) -> $crate::parse::ParserResult<
                 I,
                 $crate::combinators::escaped::EscapeToken<I>,
@@ -72,8 +70,8 @@ macro_rules! escape_character (
                     $(
                         if let Some((_, remaining)) = s.pop(&$seq) {
                             return Ok((
-                                remaining,
-                                $crate::combinators::escaped::EscapeToken::Escaped($seq)
+                                $crate::combinators::escaped::EscapeToken::Escaped($seq),
+                                remaining
                             ));
                         }
                     )*;
@@ -82,15 +80,14 @@ macro_rules! escape_character (
                         $crate::combinators::escaped::InvalidEscapeSequence,
                     ))
                 } else {
-                    let (remaining, t) = s.as_str()
+                    let (o, remaining) = s.as_str()
                         .find($esc)
                         .map(|idx| s.split_at(idx))
-                        .unwrap_or_else(|| (s.clone(), s.empty()))
-                        .rot();
+                        .unwrap_or_else(|| s.take_all());
 
                     Ok((
-                        remaining,
-                        $crate::combinators::escaped::EscapeToken::Unescaped(t)
+                        $crate::combinators::escaped::EscapeToken::Unescaped(o),
+                        remaining
                     ))
                 }
             }
@@ -120,19 +117,19 @@ mod test {
     #[test]
     fn simple() {
         fn never_escape<I: Input>(s: &I) -> ParserResult<I, EscapeToken<I>> {
-            Ok((s.empty(), EscapeToken::Unescaped(s.clone())))
+            Ok((EscapeToken::Unescaped(s.clone()), s.empty()))
         }
         assert_eq!(
             escape(never_escape).parse(&"foo"),
-            Ok(("", "foo".to_string()))
+            Ok(("foo".to_string(), ""))
         );
 
         fn always_escape<I: Input>(s: &I) -> ParserResult<I, EscapeToken<I>> {
-            Ok((s.empty(), EscapeToken::Escaped("bar")))
+            Ok((EscapeToken::Escaped("bar"), s.empty()))
         }
         assert_eq!(
             escape(always_escape).parse(&"foo"),
-            Ok(("", "bar".to_string()))
+            Ok(("bar".to_string(), ""))
         );
     }
 
@@ -141,25 +138,25 @@ mod test {
         let parser = escape_backslash!("a" "b");
         assert_eq!(
             parser.parse(&"foo \\a bar"),
-            Ok(("\\a bar", EscapeToken::Unescaped("foo ")))
+            Ok((EscapeToken::Unescaped("foo "), "\\a bar"))
         );
         assert_eq!(
             parser.parse(&"foo \\b bar"),
-            Ok(("\\b bar", EscapeToken::Unescaped("foo ")))
+            Ok((EscapeToken::Unescaped("foo "), "\\b bar"))
         );
 
         assert_eq!(
             parser.parse(&"\\a bar"),
-            Ok((" bar", EscapeToken::Escaped("a")))
+            Ok((EscapeToken::Escaped("a"), " bar"))
         );
         assert_eq!(
             parser.parse(&"\\b bar"),
-            Ok((" bar", EscapeToken::Escaped("b")))
+            Ok((EscapeToken::Escaped("b"), " bar"))
         );
 
         assert_eq!(
             parser.parse(&" bar"),
-            Ok(("", EscapeToken::Unescaped(" bar")))
+            Ok((EscapeToken::Unescaped(" bar"), ""))
         );
     }
 
@@ -168,14 +165,14 @@ mod test {
         let parser = escape(escape_backslash!("a" "b"));
         assert_eq!(
             parser.parse(&"foo \\a bar"),
-            Ok(("", "foo a bar".to_string()))
+            Ok(("foo a bar".to_string(), ""))
         );
         assert_eq!(
             parser.parse(&"foo \\b bar"),
-            Ok(("", "foo b bar".to_string()))
+            Ok(("foo b bar".to_string(), ""))
         );
 
-        assert_eq!(parser.parse(&"foo bar"), Ok(("", "foo bar".to_string())));
+        assert_eq!(parser.parse(&"foo bar"), Ok(("foo bar".to_string(), "")));
 
         assert_eq!(
             parser.parse(&"foo \\ bar"),

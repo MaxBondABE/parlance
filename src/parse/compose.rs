@@ -1,7 +1,14 @@
-use super::{Never, NotFound, Parser};
+use super::{Incomplete, Never, NotFound, Parser, StreamingOk, StreamingParser};
+use crate::util::conditional_transforms::NoPartial;
 
 pub trait Compose<T, Input, Output, Error = NotFound, Failure = Never> {
     fn map(self) -> impl Parser<Input, Output, Error, Failure>
+    where
+        Self: Sized;
+}
+
+pub trait StreamingCompose<T, Input, Output, Error = NotFound, Failure = Never> {
+    fn map(self) -> impl StreamingParser<Input, Output, Error, Failure>
     where
         Self: Sized;
 }
@@ -24,13 +31,46 @@ macro_rules! compose_impl (
             > Compose<([<Output $first>], $([<Output $idx>], )* ), Input, Output, Error, Failure> for ([<P $first>], $([<P $idx>], )* [<P $last>]) {
                 fn map(self) -> impl Parser<Input, Output, Error, Failure> {
                     move |input: &Input| {
-                        let (remaining, output) = self.$first.parse(input)?;
+                        let (output, remaining) = self.$first.parse(input)?;
                         $(
-                            let (_, output) = self.$idx.parse(&output)?;
+                            let (output, _) = self.$idx.parse(&output)?;
                         )*
-                        let (_, output) = self.$last.parse(&output)?;
+                        let (output, _) = self.$last.parse(&output)?;
 
-                        Ok((remaining, output))
+                        Ok((output, remaining))
+                    }
+
+                }
+            }
+
+            impl<
+                Input,
+                Error,
+                Failure: From<Incomplete>,
+                Output,
+                [<Output $first>],
+                [<P $first>]: StreamingParser<Input, [<Output $first>], Error, Failure>,
+                $(
+                    [<Output $idx>],
+                    [<P $idx>]: StreamingParser<[<Output $prev>], [<Output $idx>], Error, Failure>,
+                )*
+                [<P $last>]: StreamingParser<[<Output $last_prev>], Output, Error, Failure>,
+            > StreamingCompose<([<Output $first>], $([<Output $idx>], )* ), Input, Output, Error, Failure> for ([<P $first>], $([<P $idx>], )* [<P $last>]) {
+                fn map(self) -> impl StreamingParser<Input, Output, Error, Failure> {
+                    move |input: &Input| {
+                        let StreamingOk::Complete(output, remaining) = self.$first.parse_stream(input).no_partial()? else {
+                            unreachable!()
+                        };
+                        $(
+                            let StreamingOk::Complete(output, _) = self.$idx.parse_stream(&output).no_partial()? else {
+                                unreachable!()
+                            };
+                        )*
+                        let StreamingOk::Complete(output, _) = self.$last.parse_stream(&output).no_partial()? else {
+                            unreachable!()
+                        };
+
+                        Ok(StreamingOk::Complete(output, remaining))
                     }
 
                 }

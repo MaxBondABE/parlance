@@ -8,7 +8,7 @@ use crate::{
     input::Input,
     parse::{Choice, Fusable, NotFound, Parser, ParserError, ParserResult, Sequence},
     primitives::tag::tag_no_case,
-    util::rotate::Rotate,
+    util::conditional_transforms::OrNotFound,
 };
 
 pub fn sign<I: Input>(s: &I) -> ParserResult<I, I> {
@@ -16,9 +16,7 @@ pub fn sign<I: Input>(s: &I) -> ParserResult<I, I> {
 }
 
 pub fn digits<I: Input>(s: &I) -> ParserResult<I, I> {
-    s.take_while(|c| c.is_ascii_digit())
-        .rot()
-        .ok_or(ParserError::Error(NotFound))
+    s.take_while(|c| c.is_ascii_digit()).ok_or_not_found()
 }
 
 pub fn digits_with_decimal<I: Input>(s: &I) -> ParserResult<I, I> {
@@ -94,9 +92,9 @@ impl<I: Input> NumberToken<I> {
 }
 
 pub fn integer<I: Input, O: Integer>(s: &I) -> ParserResult<I, O, NotFound, <O as FromStr>::Err> {
-    if let Ok((remaining, n)) = plain_number.parse(s) {
+    if let Ok((n, remaining)) = plain_number.parse(s) {
         match O::from_str(n.as_str()) {
-            Ok(output) => Ok((remaining, output)),
+            Ok(output) => Ok((output, remaining)),
             Err(e) => Err(ParserError::Failure(e)),
         }
     } else {
@@ -107,9 +105,9 @@ pub fn integer<I: Input, O: Integer>(s: &I) -> ParserResult<I, O, NotFound, <O a
 pub fn unsigned_integer<I: Input, O: UnsignedInteger>(
     s: &I,
 ) -> ParserResult<I, O, NotFound, <O as FromStr>::Err> {
-    if let Ok((remaining, n)) = positive_number.parse(s) {
+    if let Ok((n, remaining)) = positive_number.parse(s) {
         match O::from_str(n.as_str()) {
-            Ok(output) => Ok((remaining, output)),
+            Ok(output) => Ok((output, remaining)),
             Err(e) => Err(ParserError::Failure(e)),
         }
     } else {
@@ -118,9 +116,9 @@ pub fn unsigned_integer<I: Input, O: UnsignedInteger>(
 }
 
 pub fn real<I: Input, O: Real>(s: &I) -> ParserResult<I, O, NotFound, <O as FromStr>::Err> {
-    if let Ok((remaining, n)) = NumberToken::parse(s) {
+    if let Ok((n, remaining)) = NumberToken::parse(s) {
         match O::from_str(n.unwrap().as_str()) {
-            Ok(output) => Ok((remaining, output)),
+            Ok(output) => Ok((output, remaining)),
             Err(e) => Err(ParserError::Failure(e)),
         }
     } else {
@@ -137,20 +135,20 @@ pub enum Number {
 impl Number {
     pub fn parse<I: Input>(s: &I) -> ParserResult<I, Self, NotFound, NumberFailure> {
         match NumberToken::parse(s) {
-            Ok((remaining, NumberToken::Plain(n))) => {
+            Ok((NumberToken::Plain(n), remaining)) => {
                 if n.as_str().starts_with("-") {
                     i32::from_str(n.as_str())
-                        .map(|n| (remaining, n.into()))
+                        .map(|n| (n.into(), remaining))
                         .map_err(|e| ParserError::Failure(e.into()))
                 } else {
                     u32::from_str(n.as_str())
-                        .map(|n| (remaining, n.into()))
+                        .map(|n| (n.into(), remaining))
                         .map_err(|e| ParserError::Failure(e.into()))
                 }
             }
-            Ok((remaining, NumberToken::WithDecimal(n)))
-            | Ok((remaining, NumberToken::Scientific(n))) => f32::from_str(n.as_str())
-                .map(|n| (remaining, n.into()))
+            Ok((NumberToken::WithDecimal(n), remaining))
+            | Ok((NumberToken::Scientific(n), remaining)) => f32::from_str(n.as_str())
+                .map(|n| (n.into(), remaining))
                 .map_err(|e| ParserError::Failure(e.into())),
             Err(_) => Err(ParserError::Error(NotFound)),
         }
@@ -205,7 +203,7 @@ macro_rules! integer_impl {
         )*
     }
 }
-integer_impl!(i8, i16, i32, i64, i128,);
+integer_impl!(i8, i16, i32, i64, i128, isize,);
 
 macro_rules! unsigned_integer_impl {
     ($($uint:ty, )*) => {
@@ -214,7 +212,7 @@ macro_rules! unsigned_integer_impl {
         )*
     }
 }
-unsigned_integer_impl!(u8, u16, u32, u64, u128,);
+unsigned_integer_impl!(u8, u16, u32, u64, u128, usize,);
 
 macro_rules! float_impl {
     ($($real:ty, )*) => {
@@ -231,36 +229,36 @@ mod test {
 
     #[test]
     fn plain() {
-        assert_eq!(plain_number.parse(&"123"), Ok(("", "123")));
+        assert_eq!(plain_number.parse(&"123"), Ok(("123", "")));
     }
 
     #[test]
     fn with_decimal() {
-        assert_eq!(number_with_decimal.parse(&"123.45"), Ok(("", "123.45")));
+        assert_eq!(number_with_decimal.parse(&"123.45"), Ok(("123.45", "")));
     }
 
     #[test]
     fn scientific() {
-        assert_eq!(scientific_number.parse(&"1e6"), Ok(("", "1e6")));
-        assert_eq!(scientific_number.parse(&"1.0e6"), Ok(("", "1.0e6")));
+        assert_eq!(scientific_number.parse(&"1e6"), Ok(("1e6", "")));
+        assert_eq!(scientific_number.parse(&"1.0e6"), Ok(("1.0e6", "")));
 
-        assert_eq!(scientific_number.parse(&"1E6"), Ok(("", "1E6")));
-        assert_eq!(scientific_number.parse(&"1.0E6"), Ok(("", "1.0E6")));
+        assert_eq!(scientific_number.parse(&"1E6"), Ok(("1E6", "")));
+        assert_eq!(scientific_number.parse(&"1.0E6"), Ok(("1.0E6", "")));
     }
 
     #[test]
     fn one() {
-        assert_eq!(Number::parse.parse(&"1"), Ok(("", Number::Unsigned(1))));
-        assert_eq!(Number::parse.parse(&"-1"), Ok(("", Number::Signed(-1))));
-        assert_eq!(Number::parse.parse(&"1.0"), Ok(("", Number::Real(1.0))));
-        assert_eq!(Number::parse.parse(&"-1.0"), Ok(("", Number::Real(-1.0))));
+        assert_eq!(Number::parse.parse(&"1"), Ok((Number::Unsigned(1), "")));
+        assert_eq!(Number::parse.parse(&"-1"), Ok((Number::Signed(-1), "")));
+        assert_eq!(Number::parse.parse(&"1.0"), Ok((Number::Real(1.0), "")));
+        assert_eq!(Number::parse.parse(&"-1.0"), Ok((Number::Real(-1.0), "")));
     }
 
     #[test]
     fn zeroes() {
-        assert_eq!(Number::parse.parse(&"0"), Ok(("", Number::Unsigned(0))));
-        assert_eq!(Number::parse.parse(&"0.0"), Ok(("", Number::Real(0.0))));
-        assert_eq!(Number::parse.parse(&"-0.0"), Ok(("", Number::Real(0.0))));
+        assert_eq!(Number::parse.parse(&"0"), Ok((Number::Unsigned(0), "")));
+        assert_eq!(Number::parse.parse(&"0.0"), Ok((Number::Real(0.0), "")));
+        assert_eq!(Number::parse.parse(&"-0.0"), Ok((Number::Real(0.0), "")));
     }
 }
 
@@ -272,14 +270,14 @@ mod property_tests {
     proptest! {
         #[test]
         fn uinteger_dogfood(n in u32::MIN..u32::MAX) {
-            assert_eq!(Number::parse(&n.to_string().as_str()), Ok(("", Number::Unsigned(n))))
+            assert_eq!(Number::parse(&n.to_string().as_str()), Ok((Number::Unsigned(n), "")))
         }
         #[test]
         fn integer_dogfood(n in i32::MIN..i32::MAX) {
             match Number::parse(&n.to_string()) {
-                Ok((_, Number::Signed(x))) => assert_eq!(n, x),
-                Ok((_, Number::Unsigned(x))) => assert_eq!(n as u32, x),
-                Ok((_, Number::Real(x))) => panic!("Integer should not be real (parsed as {})", x),
+                Ok((Number::Signed(x), _)) => assert_eq!(n, x),
+                Ok((Number::Unsigned(x), _)) => assert_eq!(n as u32, x),
+                Ok((Number::Real(x), _)) => panic!("Integer should not be real (parsed as {})", x),
                 Err(e) => panic!("Error: {:?}", e),
             }
         }
@@ -288,7 +286,7 @@ mod property_tests {
             let n = (a as f32) * b;
             let s = format!("{:.4}", n);
             match Number::parse(&s) {
-                Ok((_, Number::Real(actual))) => assert!((n - actual).abs() < 0.1),
+                Ok((Number::Real(actual), _)) => assert!((n - actual).abs() < 0.1),
                 Ok(x) => panic!("Wrong number kind {:?}", x),
                 Err(e) => panic!("Error: {:?}", e),
             };

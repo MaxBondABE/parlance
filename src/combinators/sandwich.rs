@@ -13,10 +13,10 @@ pub fn sandwich<
     content: Content,
 ) -> impl Parser<I, ContentOutput, E, F> {
     move |input: &I| {
-        let (remaining, _) = bread.parse(input)?;
-        let (remaining, output) = content.parse(input)?;
-        let (remaining, _) = bread.parse(input)?;
-        Ok((remaining, output))
+        let (_, remaining) = bread.parse(input)?;
+        let (output, remaining) = content.parse(input)?;
+        let (_, remaining) = bread.parse(input)?;
+        Ok((output, remaining))
     }
 }
 
@@ -36,10 +36,10 @@ pub fn between<
     end: End,
 ) -> impl Parser<I, ContentOutput, E, F> {
     move |input: &I| {
-        let (remaining, _) = start.parse(input)?;
-        let (remaining, output) = content.parse(input)?;
-        let (remaining, _) = end.parse(input)?;
-        Ok((remaining, output))
+        let (_, remaining) = start.parse(input)?;
+        let (output, remaining) = content.parse(input)?;
+        let (_, remaining) = end.parse(input)?;
+        Ok((output, remaining))
     }
 }
 
@@ -59,9 +59,9 @@ pub fn key_value<
     end: Value,
 ) -> impl Parser<I, (KeyOutput, ValueOutput), E, F> {
     move |input: &I| {
-        let (remaining, key) = start.parse(input)?;
-        let (remaining, _) = content.parse(input)?;
-        let (remaining, value) = end.parse(input)?;
-        Ok((remaining, (key, value)))
+        let (key, remaining) = start.parse(input)?;
+        let (_, remaining) = content.parse(input)?;
+        let (value, remaining) = end.parse(input)?;
+        Ok(((key, value), remaining))
     }
 }

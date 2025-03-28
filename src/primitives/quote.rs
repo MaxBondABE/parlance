@@ -1,7 +1,10 @@
 use crate::{
     combinators::sandwich::sandwich,
     input::Input,
-    parse::{Choice, Never, NotFound, Parser, ParserError, ParserResult},
+    parse::{
+        Choice, Never, NotFound, Parser, ParserError, ParserResult, StreamingChoice,
+        StreamingError, StreamingOk, StreamingParser, StreamingResult,
+    },
     primitives::tag::tag,
 };
 
@@ -14,32 +17,46 @@ pub const SINGLE_QUOTE_STR: &str = "'";
 pub const ESCAPE: char = '\\';
 pub const ESCAPE_STR: &str = "\\";
 
-pub fn single_quoted<I: Input>(s: &I) -> ParserResult<I, I, NotFound, UnterminatedQuote> {
-    let Ok((remaining, _)) = tag(SINGLE_QUOTE_STR).parse(s) else {
-        return Err(ParserError::Error(NotFound));
+pub fn single_quoted_stream<I: Input>(s: &I) -> StreamingResult<I, I, NotFound, UnterminatedQuote> {
+    let Ok((_, remaining)) = tag(SINGLE_QUOTE_STR).parse(s) else {
+        return Err(StreamingError::Error(NotFound));
     };
 
     if let Some(idx) = find_quote_mark(SINGLE_QUOTE, remaining.as_str()) {
         let (output, r) = remaining.split_at(idx);
         let remaining = r.slice(SINGLE_QUOTE.len_utf8()..r.len());
-        Ok((remaining, output))
+        Ok(StreamingOk::Complete(output, remaining))
     } else {
-        Err(ParserError::Incomplete(UnterminatedQuote))
+        Err(StreamingError::Incomplete(UnterminatedQuote))
     }
 }
 
-pub fn double_quoted<I: Input>(s: &I) -> ParserResult<I, I, NotFound, UnterminatedQuote> {
-    let Ok((remaining, _)) = tag(DOUBLE_QUOTE_STR).parse(s) else {
-        return Err(ParserError::Error(NotFound));
+pub fn single_quoted<I: Input>(s: &I) -> ParserResult<I, I, NotFound, UnterminatedQuote> {
+    single_quoted_stream.complete().parse(s)
+}
+
+pub fn double_quoted_stream<I: Input>(s: &I) -> StreamingResult<I, I, NotFound, UnterminatedQuote> {
+    let Ok((_, remaining)) = tag(DOUBLE_QUOTE_STR).parse(s) else {
+        return Err(StreamingError::Error(NotFound));
     };
 
     if let Some(idx) = find_quote_mark(DOUBLE_QUOTE, remaining.as_str()) {
         let (output, r) = remaining.split_at(idx);
         let remaining = r.slice(DOUBLE_QUOTE.len_utf8()..r.len());
-        Ok((remaining, output))
+        Ok(StreamingOk::Complete(output, remaining))
     } else {
-        Err(ParserError::Incomplete(UnterminatedQuote))
+        Err(StreamingError::Incomplete(UnterminatedQuote))
     }
+}
+
+pub fn double_quoted<I: Input>(s: &I) -> ParserResult<I, I, NotFound, UnterminatedQuote> {
+    double_quoted_stream.complete().parse(s)
+}
+
+pub fn quoted_stream<I: Input>(s: &I) -> StreamingResult<I, I, NotFound, UnterminatedQuote> {
+    (single_quoted_stream, double_quoted_stream)
+        .or()
+        .parse_stream(s)
 }
 
 pub fn quoted<I: Input>(s: &I) -> ParserResult<I, I, NotFound, UnterminatedQuote> {
@@ -82,31 +99,37 @@ mod test {
 
     #[test]
     fn simple() {
-        assert_eq!(single_quoted.parse(&"'foo' bar"), Ok((" bar", "foo")));
-        assert_eq!(quoted.parse(&"'foo' bar"), Ok((" bar", "foo")));
+        assert_eq!(
+            single_quoted.parse(&"'foo' bar"),
+            Ok(("foo", " bar"))
+        );
+        assert_eq!(quoted.parse(&"'foo' bar"), Ok(("foo", " bar")));
 
-        assert_eq!(double_quoted.parse(&"\"foo\" bar"), Ok((" bar", "foo")));
-        assert_eq!(quoted.parse(&"\"foo\" bar"), Ok((" bar", "foo")));
+        assert_eq!(
+            double_quoted.parse(&"\"foo\" bar"),
+            Ok(("foo", " bar"))
+        );
+        assert_eq!(quoted.parse(&"\"foo\" bar"), Ok(("foo", " bar")));
     }
 
     #[test]
     fn escaped() {
         assert_eq!(
             single_quoted.parse(&"'foo\\' bar' baz"),
-            Ok((" baz", "foo\\' bar"))
+            Ok(("foo\\' bar", " baz"))
         );
         assert_eq!(
             quoted.parse(&"'foo\\' bar' baz"),
-            Ok((" baz", "foo\\' bar"))
+            Ok(("foo\\' bar", " baz"))
         );
 
         assert_eq!(
             double_quoted.parse(&"\"foo\\\" bar\" baz"),
-            Ok((" baz", "foo\\\" bar"))
+            Ok(("foo\\\" bar", " baz"))
         );
         assert_eq!(
             quoted.parse(&"\"foo\\\" bar\" baz"),
-            Ok((" baz", "foo\\\" bar"))
+            Ok(("foo\\\" bar", " baz"))
         );
     }
 }
