@@ -21,7 +21,18 @@ pub fn tag_no_case<T: AsRef<str>, I: Input>(s: T) -> impl Parser<I, I> {
 
 impl<I: Input> Parser<I, I> for &str {
     fn parse(&self, input: &I) -> ParserResult<I, I> {
-        tag(self).parse(input)
+        #[cfg(any(
+            feature = "case_sensitive_tags",
+            not(any(feature = "case_insensitive_tags", feature = "case_sensitive_tags"))
+        ))]
+        {
+            tag(self).parse(input)
+        }
+
+        #[cfg(feature = "case_insensitive_tags")]
+        {
+            tag_no_case(self).parse(input)
+        }
     }
 }
 
