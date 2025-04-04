@@ -4,6 +4,7 @@ pub mod span;
 pub mod string;
 pub mod transform;
 
+/// A string-like data structure which can be consumed by a `Parser`.
 pub trait Input: Clone + fmt::Debug {
     fn as_str(&self) -> &str;
     fn len(&self) -> usize {

@@ -1,3 +1,4 @@
+/// Exports the types required for end use.
 // Concrete types & aliases
 pub use crate::parse::{
     Incomplete, Never, NotFound, ParserError, ParserResult, StreamingError, StreamingOk,
@@ -8,8 +9,7 @@ pub use crate::parse::{
 pub use crate::input::Input;
 pub use crate::parse::{Parser, StreamingParser};
 
-// Automatic traits - these occupy common names, so bind anonymously to
-// avoid polluting namespace.
+// Automaticly implemented traits
 pub use crate::{
     parse::{
         Choice as _, Compose as _, FuseSequence as _, Sequence as _, StreamingChoice as _,

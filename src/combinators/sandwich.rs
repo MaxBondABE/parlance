@@ -1,4 +1,7 @@
-use crate::parse::{Parser, Sequence};
+use crate::{
+    parse::{Parser, Sequence},
+    primitives::whitespace,
+};
 
 pub fn sandwich<
     I,
@@ -54,14 +57,14 @@ pub fn key_value<
     Delimiter: Parser<I, ContentOutput, E, F>,
     Value: Parser<I, ValueOutput, E, F>,
 >(
-    start: Key,
-    content: Delimiter,
-    end: Value,
+    key: Key,
+    delim: Delimiter,
+    value: Value,
 ) -> impl Parser<I, (KeyOutput, ValueOutput), E, F> {
     move |input: &I| {
-        let (key, remaining) = start.parse(input)?;
-        let (_, remaining) = content.parse(input)?;
-        let (value, remaining) = end.parse(input)?;
+        let (key, remaining) = key.parse(input)?;
+        let (_, remaining) = delim.parse(input)?;
+        let (value, remaining) = value.parse(input)?;
         Ok(((key, value), remaining))
     }
 }

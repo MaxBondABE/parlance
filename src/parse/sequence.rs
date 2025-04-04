@@ -8,7 +8,8 @@ use super::{
     StreamingParser,
 };
 
-/// A tuple of parsers, applied serially.
+/// A set of parsers which consume the input in series, failing if any
+/// one of them returns an error.
 pub trait Sequence<Input, Output, Error = NotFound, Failure = Never> {
     fn and(self) -> impl Parser<Input, Output, Error, Failure>;
     fn with_sep<O, P>(self, sep: P) -> SeparatedSequence<Self, P>

@@ -66,7 +66,7 @@ pub enum NumberToken<I> {
     Plain(I),
     WithDecimal(I),
     Scientific(I),
-    // TODO special
+    Special(I),
 }
 impl<I> NumberToken<I> {
     pub fn unwrap(self) -> I {
@@ -74,6 +74,7 @@ impl<I> NumberToken<I> {
             NumberToken::Plain(x) => x,
             NumberToken::WithDecimal(x) => x,
             NumberToken::Scientific(x) => x,
+            NumberToken::Special(x) => x,
         }
     }
 }
@@ -83,6 +84,7 @@ impl<I: Input> NumberToken<I> {
             scientific_number.map(NumberToken::Scientific),
             number_with_decimal.map(NumberToken::WithDecimal),
             plain_number.map(NumberToken::Plain),
+            special.map(NumberToken::Special),
         )
             .or()
             .parse(s)
@@ -145,7 +147,8 @@ impl Number {
                 }
             }
             Ok((NumberToken::WithDecimal(n), remaining))
-            | Ok((NumberToken::Scientific(n), remaining)) => f32::from_str(n.as_str())
+            | Ok((NumberToken::Scientific(n), remaining))
+            | Ok((NumberToken::Special(n), remaining)) => f32::from_str(n.as_str())
                 .map(|n| (n.into(), remaining))
                 .map_err(|e| ParserError::Failure(e.into())),
             Err(_) => Err(ParserError::Error(NotFound)),

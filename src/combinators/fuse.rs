@@ -32,5 +32,4 @@ mod test {
         }
         assert_eq!(strfuse!(("a", "b", foo)).parse(&"abc"), Ok(("ab", "c")))
     }
-
 }

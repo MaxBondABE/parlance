@@ -99,16 +99,10 @@ mod test {
 
     #[test]
     fn simple() {
-        assert_eq!(
-            single_quoted.parse(&"'foo' bar"),
-            Ok(("foo", " bar"))
-        );
+        assert_eq!(single_quoted.parse(&"'foo' bar"), Ok(("foo", " bar")));
         assert_eq!(quoted.parse(&"'foo' bar"), Ok(("foo", " bar")));
 
-        assert_eq!(
-            double_quoted.parse(&"\"foo\" bar"),
-            Ok(("foo", " bar"))
-        );
+        assert_eq!(double_quoted.parse(&"\"foo\" bar"), Ok(("foo", " bar")));
         assert_eq!(quoted.parse(&"\"foo\" bar"), Ok(("foo", " bar")));
     }
 
