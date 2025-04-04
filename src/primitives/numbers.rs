@@ -4,10 +4,10 @@ use std::{
 };
 
 use crate::{
-    fuse,
     input::Input,
     parse::{Choice, Fusable, NotFound, Parser, ParserError, ParserResult, Sequence},
     primitives::tag::tag_no_case,
+    strfuse,
     util::conditional_transforms::OrNotFound,
 };
 
@@ -20,27 +20,27 @@ pub fn digits<I: Input>(s: &I) -> ParserResult<I, I> {
 }
 
 pub fn digits_with_decimal<I: Input>(s: &I) -> ParserResult<I, I> {
-    fuse!((digits, ".", digits)).parse(s)
+    strfuse!((digits, ".", digits)).parse(s)
 }
 
 pub fn plain_number<I: Input>(s: &I) -> ParserResult<I, I> {
-    fuse!((sign.opt(), digits)).parse(s)
+    strfuse!((sign.opt(), digits)).parse(s)
 }
 
 pub fn positive_number<I: Input>(s: &I) -> ParserResult<I, I> {
-    fuse!(("+".opt(), digits)).parse(s)
+    strfuse!(("+".opt(), digits)).parse(s)
 }
 
 pub fn negative_number<I: Input>(s: &I) -> ParserResult<I, I> {
-    fuse!(("-", digits)).parse(s)
+    strfuse!(("-", digits)).parse(s)
 }
 
 pub fn number_with_decimal<I: Input>(s: &I) -> ParserResult<I, I> {
-    fuse!((sign.opt(), digits_with_decimal)).parse(s)
+    strfuse!((sign.opt(), digits_with_decimal)).parse(s)
 }
 
 pub fn scientific_number<I: Input>(s: &I) -> ParserResult<I, I> {
-    fuse!((
+    strfuse!((
         sign.opt(),
         digits,
         ".".opt(),
@@ -54,10 +54,8 @@ pub fn scientific_number<I: Input>(s: &I) -> ParserResult<I, I> {
 
 pub fn special<I: Input>(s: &I) -> ParserResult<I, I> {
     (
-        fuse!((sign.opt(), "infinity")),
-        fuse!((sign.opt(), "inf")),
-        "NaN",
-        "nan",
+        strfuse!((sign.opt(), "inf", "inity".opt())),
+        tag_no_case("NaN"),
     )
         .or()
         .parse(s)

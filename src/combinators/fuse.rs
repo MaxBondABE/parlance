@@ -1,5 +1,5 @@
 #[macro_export]
-macro_rules! fuse (
+macro_rules! strfuse (
     ($x: expr) => {
         {
             {
@@ -25,12 +25,12 @@ mod test {
 
     #[test]
     fn simple() {
-        assert_eq!(fuse!(("a", "b")).parse(&"abc"), Ok(("ab", "c")));
+        assert_eq!(strfuse!(("a", "b")).parse(&"abc"), Ok(("ab", "c")));
 
         fn foo<'a, 'b>(s: &'a &'b str) -> ParserResult<&'b str, &'b str> {
             return Ok(("", *s));
         }
-        assert_eq!(fuse!(("a", "b", foo)).parse(&"abc"), Ok(("ab", "c")))
+        assert_eq!(strfuse!(("a", "b", foo)).parse(&"abc"), Ok(("ab", "c")))
     }
 
 }
