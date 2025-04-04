@@ -19,18 +19,25 @@ pub use streaming::{
     StreamingParser, StreamingResult,
 };
 
+/// This trait represents a parsing operation, and supplies utilities for the parser's
+/// type signature and composing it with other parsers.
+///
+/// A parsing operation is any function implementing `Fn(&Input) -> ParserResult<Input, Output, Error, Failure>`.
 pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
+    /// Attempt to consume the provided input, returning the parsed token
+    /// and the remaining input, or a `ParserError`.
     fn parse(&self, input: &Input) -> ParserResult<Input, Output, Error, Failure>;
+    /// Map a function over the parser's output.
     fn map<O, Func: Fn(Output) -> O>(self, f: Func) -> impl Parser<Input, O, Error, Failure>
     where
         Self: Sized,
     {
         move |input: &Input| match self.parse(input) {
             Ok((o, remaining)) => Ok((f(o), remaining)),
-            Err(ParserError::Error(e)) => Err(ParserError::Error(e)),
-            Err(ParserError::Failure(e)) => Err(ParserError::Failure(e)),
+            Err(e) => Err(e),
         }
     }
+    /// Map a function over the parser's error cases.
     fn map_err<E, F, Func: Fn(ParserError<Error, Failure>) -> ParserError<E, F>>(
         self,
         f: Func,
@@ -43,6 +50,7 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
             Err(e) => Err(f(e)),
         }
     }
+    // Map a function over `ParserError::Error` cases.
     fn map_errors<E, F: Fn(Error) -> E>(self, f: F) -> impl Parser<Input, Output, E, Failure>
     where
         Self: Sized,
@@ -54,6 +62,7 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
             })
         }
     }
+    // Map a function over `ParserError::Failure` cases.
     fn map_failures<F, Func: Fn(Failure) -> F>(
         self,
         f: Func,
@@ -68,7 +77,7 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
             })
         }
     }
-    /// Utility to normalize a parser to an equivalent signature.
+    /// Normalize all type parameters (except `Input`) using `From`.
     fn to<O: From<Output>, E: From<Error>, F: From<Failure>>(self) -> impl Parser<Input, O, E, F>
     where
         Self: Sized,
@@ -79,55 +88,66 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
             Err(ParserError::Failure(e)) => Err(ParserError::Failure(e.into())),
         }
     }
+    /// Normalize the `Output` type of a parser using `From`.
     fn to_output<O: From<Output>>(self) -> impl Parser<Input, O, Error, Failure>
     where
         Self: Sized,
     {
         self.map(From::from)
     }
+    /// Normalize the `Error` type of a parser using `From`.
     fn to_error<E: From<Error>>(self) -> impl Parser<Input, Output, E, Failure>
     where
         Self: Sized,
     {
         self.map_errors(From::from)
     }
+    /// Normalize the `Failure` type of a parser using `From`.
     fn to_failure<F: From<Failure>>(self) -> impl Parser<Input, Output, Error, F>
     where
         Self: Sized,
     {
         self.map_failures(From::from)
     }
+    // Substite any `ParserError::Error` values returned by the parser with the one provided.
     fn with_error<E: Clone>(self, err: E) -> impl Parser<Input, Output, E, Failure>
     where
         Self: Sized,
     {
         self.map_errors(move |_| err.clone())
     }
+    // Substite any `ParserError::Error` values returned by the parser with the output of the
+    // function provided.
     fn with_error_as<E, Func: Fn() -> E>(self, f: Func) -> impl Parser<Input, Output, E, Failure>
     where
         Self: Sized,
     {
         self.map_errors(move |_| f())
     }
+    // Substite any `ParserError::Failure` values returned by the parser with the one provided.
     fn with_failure<F: Clone>(self, err: F) -> impl Parser<Input, Output, Error, F>
     where
         Self: Sized,
     {
         self.map_failures(move |_| err.clone())
     }
+    // Substite any `ParserError::Failure` values returned by the parser with the output of the
+    // function provided.
     fn with_failure_as<F, Func: Fn() -> F>(self, f: Func) -> impl Parser<Input, Output, Error, F>
     where
         Self: Sized,
     {
         self.map_failures(move |_| f())
     }
+    // Substite the output value returned by the parser with the one provided.
     fn with_output<O: Clone>(self, output: O) -> impl Parser<Input, O, Error, Failure>
     where
         Self: Sized,
     {
         self.map(move |_| output.clone())
     }
-    /// Upgrade recoverable errors to permanent failures.
+    /// Promote recoverable `ParserError::Error` cases to permanent `ParserError::Failure` cases
+    /// using `From`.
     fn or_fail(self) -> impl Parser<Input, Output, Error, Failure>
     where
         Self: Sized,
@@ -140,7 +160,8 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
             })
         }
     }
-    /// Upgrade recoverable errors to permanent failures.
+    /// Promote recoverable `ParserError::Error` cases to permanent `ParserError::Failure` cases
+    /// by substituting the provided value.
     fn or_fail_with<F: Clone + From<Failure>>(self, err: F) -> impl Parser<Input, Output, Error, F>
     where
         Self: Sized,
@@ -152,7 +173,8 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
             })
         }
     }
-    /// Upgrade recoverable errors to the given permanent error.
+    /// Promote recoverable `ParserError::Error` cases to permanent `ParserError::Failure` cases
+    /// using the provided function.
     fn or_fail_as<F, Func: Fn() -> F>(self, f: Func) -> impl Parser<Input, Output, Error, F>
     where
         Self: Sized,
@@ -164,8 +186,7 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
             })
         }
     }
-    /// Downgrade permanent failures into recoverable errors.
-    /// NB: Failures inside of an `Incomplete` variant are untouched.
+    /// Demote `ParserError::Error` cases into `ParserError::Failure` cases.
     fn no_fail(self) -> impl Parser<Input, Output, Error, Never>
     where
         Self: Sized,
@@ -178,7 +199,7 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
             })
         }
     }
-    /// Returns None on a recoverable error.
+    /// Returns `None` on a `ParserError::Error`.
     fn opt(self) -> impl Parser<Input, Option<Output>, Error, Failure>
     where
         Self: Sized,
@@ -240,6 +261,7 @@ impl<E: fmt::Debug, F: fmt::Debug> fmt::Debug for ParserError<E, F> {
     }
 }
 
+// Implements Parser for all functions with the correct signature.
 impl<
         Input,
         Output,
