@@ -1,7 +1,10 @@
-use crate::{input::Input, parse::{
-    Incomplete, Never, NotFound, ParserError, ParserResult, StreamingError, StreamingOk,
-    StreamingResult,
-}};
+use crate::{
+    input::Input,
+    parse::{
+        Incomplete, Never, NotFound, ParserError, ParserResult, PartialError, PartialOk,
+        PartialResult,
+    },
+};
 
 pub trait OrNotFound<I, O> {
     fn ok_or_not_found(self) -> ParserResult<I, O>;
@@ -21,39 +24,39 @@ impl<I, O, F: Default> OrFail<I, O, F> for Option<(O, I)> {
     }
 }
 
-pub trait StreamingOrNotFound<I, O> {
-    fn ok_or_not_found(self) -> StreamingResult<I, O>;
+pub trait PartialOrNotFound<I, O> {
+    fn ok_or_not_found(self) -> PartialResult<I, O>;
 }
-impl<I, O> StreamingOrNotFound<I, O> for Option<StreamingOk<I, O>> {
-    fn ok_or_not_found(self) -> StreamingResult<I, O> {
-        self.ok_or(StreamingError::Error(NotFound))
+impl<I, O> PartialOrNotFound<I, O> for Option<PartialOk<I, O>> {
+    fn ok_or_not_found(self) -> PartialResult<I, O> {
+        self.ok_or(PartialError::Error(NotFound))
     }
 }
 
 pub trait OrIncomplete<I, O> {
-    fn ok_or_incomplete(self) -> StreamingResult<I, O, Never, Incomplete>;
+    fn ok_or_incomplete(self) -> PartialResult<I, O, Never, Incomplete>;
 }
-impl<I, O> OrIncomplete<I, O> for Option<StreamingOk<I, O>> {
-    fn ok_or_incomplete(self) -> StreamingResult<I, O, Never, Incomplete> {
-        self.ok_or(StreamingError::Incomplete(Incomplete))
+impl<I, O> OrIncomplete<I, O> for Option<PartialOk<I, O>> {
+    fn ok_or_incomplete(self) -> PartialResult<I, O, Never, Incomplete> {
+        self.ok_or(PartialError::Incomplete(Incomplete))
     }
 }
 
 pub trait CompleteIf<I, O> {
-    fn as_complete_if<Func: Fn(&O, &I) -> bool>(self, f: Func) -> StreamingOk<I, O>;
-    fn as_complete(self) -> StreamingOk<I, O>
+    fn as_complete_if<Func: Fn(&O, &I) -> bool>(self, f: Func) -> PartialOk<I, O>;
+    fn as_complete(self) -> PartialOk<I, O>
     where
         Self: Sized,
     {
         self.as_complete_if(|_, _| true)
     }
-    fn as_partial(self) -> StreamingOk<I, O>
+    fn as_partial(self) -> PartialOk<I, O>
     where
         Self: Sized,
     {
         self.as_complete_if(|_, _| false)
     }
-    fn has_stopped(self) -> StreamingOk<I, O>
+    fn has_stopped(self) -> PartialOk<I, O>
     where
         Self: Sized,
         I: Input,
@@ -62,17 +65,17 @@ pub trait CompleteIf<I, O> {
     }
 }
 impl<I, O> CompleteIf<I, O> for (O, I) {
-    fn as_complete_if<Func: Fn(&O, &I) -> bool>(self, f: Func) -> StreamingOk<I, O> {
+    fn as_complete_if<Func: Fn(&O, &I) -> bool>(self, f: Func) -> PartialOk<I, O> {
         let (output, remaining) = self;
         if f(&output, &remaining) {
-            StreamingOk::Complete(output, remaining)
+            PartialOk::Complete(output, remaining)
         } else {
-            StreamingOk::Partial(output, remaining)
+            PartialOk::Partial(output, remaining)
         }
     }
 }
-impl<I, O> CompleteIf<I, O> for StreamingOk<I, O> {
-    fn as_complete_if<Func: Fn(&O, &I) -> bool>(self, f: Func) -> StreamingOk<I, O> {
+impl<I, O> CompleteIf<I, O> for PartialOk<I, O> {
+    fn as_complete_if<Func: Fn(&O, &I) -> bool>(self, f: Func) -> PartialOk<I, O> {
         match self {
             Self::Complete(o, r) | Self::Partial(o, r) => (o, r).as_complete_if(f),
         }
@@ -80,20 +83,20 @@ impl<I, O> CompleteIf<I, O> for StreamingOk<I, O> {
 }
 
 pub trait MaybeCompleteIf<I, O> {
-    fn as_complete_if<Func: Fn(&O, &I) -> bool>(self, f: Func) -> Option<StreamingOk<I, O>>;
-    fn as_complete(self) -> Option<StreamingOk<I, O>>
+    fn as_complete_if<Func: Fn(&O, &I) -> bool>(self, f: Func) -> Option<PartialOk<I, O>>;
+    fn as_complete(self) -> Option<PartialOk<I, O>>
     where
         Self: Sized,
     {
         self.as_complete_if(|_, _| true)
     }
-    fn as_partial(self) -> Option<StreamingOk<I, O>>
+    fn as_partial(self) -> Option<PartialOk<I, O>>
     where
         Self: Sized,
     {
         self.as_complete_if(|_, _| false)
     }
-    fn has_stopped(self) -> Option<StreamingOk<I, O>>
+    fn has_stopped(self) -> Option<PartialOk<I, O>>
     where
         Self: Sized,
         I: Input,
@@ -102,26 +105,26 @@ pub trait MaybeCompleteIf<I, O> {
     }
 }
 impl<I, O> MaybeCompleteIf<I, O> for Option<(O, I)> {
-    fn as_complete_if<Func: Fn(&O, &I) -> bool>(self, f: Func) -> Option<StreamingOk<I, O>> {
+    fn as_complete_if<Func: Fn(&O, &I) -> bool>(self, f: Func) -> Option<PartialOk<I, O>> {
         self.map(|x| x.as_complete_if(f))
     }
 }
 
 pub trait EitherCompleteIf<I, O, E, F> {
-    fn as_complete_if<Func: Fn(&O, &I) -> bool>(self, f: Func) -> StreamingResult<I, O, E, F>;
-    fn as_complete(self) -> StreamingResult<I, O, E, F>
+    fn as_complete_if<Func: Fn(&O, &I) -> bool>(self, f: Func) -> PartialResult<I, O, E, F>;
+    fn as_complete(self) -> PartialResult<I, O, E, F>
     where
         Self: Sized,
     {
         self.as_complete_if(|_, _| true)
     }
-    fn as_partial(self) -> StreamingResult<I, O, E, F>
+    fn as_partial(self) -> PartialResult<I, O, E, F>
     where
         Self: Sized,
     {
         self.as_complete_if(|_, _| false)
     }
-    fn has_stopped(self) -> StreamingResult<I, O, E, F>
+    fn has_stopped(self) -> PartialResult<I, O, E, F>
     where
         Self: Sized,
         I: Input,
@@ -130,24 +133,24 @@ pub trait EitherCompleteIf<I, O, E, F> {
     }
 }
 impl<I, O, E, F> EitherCompleteIf<I, O, E, F> for ParserResult<I, O, E, F> {
-    fn as_complete_if<Func: Fn(&O, &I) -> bool>(self, f: Func) -> StreamingResult<I, O, E, F> {
+    fn as_complete_if<Func: Fn(&O, &I) -> bool>(self, f: Func) -> PartialResult<I, O, E, F> {
         self.map(|x| x.as_complete_if(f)).map_err(Into::into)
     }
 }
-impl<I, O, E, F> EitherCompleteIf<I, O, E, F> for StreamingResult<I, O, E, F> {
-    fn as_complete_if<Func: Fn(&O, &I) -> bool>(self, f: Func) -> StreamingResult<I, O, E, F> {
+impl<I, O, E, F> EitherCompleteIf<I, O, E, F> for PartialResult<I, O, E, F> {
+    fn as_complete_if<Func: Fn(&O, &I) -> bool>(self, f: Func) -> PartialResult<I, O, E, F> {
         self.map(|x| x.as_complete_if(f))
     }
 }
 
 pub trait NoPartial<Input, Output, Error, Failure> {
-    fn no_partial(self) -> StreamingResult<Input, Output, Error, Failure>;
+    fn no_partial(self) -> PartialResult<Input, Output, Error, Failure>;
 }
-impl<I, O, E, F: From<Incomplete>> NoPartial<I, O, E, F> for StreamingResult<I, O, E, F> {
-    fn no_partial(self) -> StreamingResult<I, O, E, F> {
+impl<I, O, E, F: From<Incomplete>> NoPartial<I, O, E, F> for PartialResult<I, O, E, F> {
+    fn no_partial(self) -> PartialResult<I, O, E, F> {
         match self {
-            Ok(StreamingOk::Complete(o, r)) => Ok(StreamingOk::Complete(o, r)),
-            Ok(StreamingOk::Partial(o, r)) => Err(StreamingError::Failure(Incomplete.into())),
+            Ok(PartialOk::Complete(o, r)) => Ok(PartialOk::Complete(o, r)),
+            Ok(PartialOk::Partial(o, r)) => Err(PartialError::Failure(Incomplete.into())),
             Err(e) => Err(e),
         }
     }

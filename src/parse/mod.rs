@@ -6,18 +6,18 @@ mod choice;
 mod compose;
 mod err;
 mod fuse;
+mod partial;
 mod sequence;
-mod streaming;
 
-pub use choice::{Choice, StreamingChoice};
-pub use compose::{Compose, StreamingCompose};
+pub use choice::{Choice, PartialChoice};
+pub use compose::{Compose, PartialCompose};
 pub use err::{Incomplete, Never, NotFound};
 pub use fuse::{Fusable, FuseSequence};
-pub use sequence::{SeparatedSequence, Sequence, StreamingSequence};
-pub use streaming::{
-    ErrorWasIncomplete, IntoStreamingParser, IntoStreamingResult, StreamingError, StreamingOk,
-    StreamingParser, StreamingResult,
+pub use partial::{
+    AsPartialParser, AsPartialResult, ErrorWasIncomplete, PartialError, PartialOk, PartialParser,
+    PartialResult,
 };
+pub use sequence::{PartialSequence, SeparatedSequence, Sequence};
 
 /// This trait represents a parsing operation, and supplies utilities for the parser's
 /// type signature and composing it with other parsers.

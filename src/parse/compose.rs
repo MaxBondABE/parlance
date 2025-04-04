@@ -1,4 +1,4 @@
-use super::{Incomplete, Never, NotFound, Parser, StreamingOk, StreamingParser};
+use super::{Incomplete, Never, NotFound, Parser, PartialOk, PartialParser};
 use crate::util::conditional_transforms::NoPartial;
 
 pub trait Compose<T, Input, Output, Error = NotFound, Failure = Never> {
@@ -7,8 +7,8 @@ pub trait Compose<T, Input, Output, Error = NotFound, Failure = Never> {
         Self: Sized;
 }
 
-pub trait StreamingCompose<T, Input, Output, Error = NotFound, Failure = Never> {
-    fn map(self) -> impl StreamingParser<Input, Output, Error, Failure>
+pub trait PartialCompose<T, Input, Output, Error = NotFound, Failure = Never> {
+    fn map(self) -> impl PartialParser<Input, Output, Error, Failure>
     where
         Self: Sized;
 }
@@ -49,28 +49,28 @@ macro_rules! compose_impl (
                 Failure: From<Incomplete>,
                 Output,
                 [<Output $first>],
-                [<P $first>]: StreamingParser<Input, [<Output $first>], Error, Failure>,
+                [<P $first>]: PartialParser<Input, [<Output $first>], Error, Failure>,
                 $(
                     [<Output $idx>],
-                    [<P $idx>]: StreamingParser<[<Output $prev>], [<Output $idx>], Error, Failure>,
+                    [<P $idx>]: PartialParser<[<Output $prev>], [<Output $idx>], Error, Failure>,
                 )*
-                [<P $last>]: StreamingParser<[<Output $last_prev>], Output, Error, Failure>,
-            > StreamingCompose<([<Output $first>], $([<Output $idx>], )* ), Input, Output, Error, Failure> for ([<P $first>], $([<P $idx>], )* [<P $last>]) {
-                fn map(self) -> impl StreamingParser<Input, Output, Error, Failure> {
+                [<P $last>]: PartialParser<[<Output $last_prev>], Output, Error, Failure>,
+            > PartialCompose<([<Output $first>], $([<Output $idx>], )* ), Input, Output, Error, Failure> for ([<P $first>], $([<P $idx>], )* [<P $last>]) {
+                fn map(self) -> impl PartialParser<Input, Output, Error, Failure> {
                     move |input: &Input| {
-                        let StreamingOk::Complete(output, remaining) = self.$first.parse_stream(input).no_partial()? else {
+                        let PartialOk::Complete(output, remaining) = self.$first.partial_parse(input).no_partial()? else {
                             unreachable!()
                         };
                         $(
-                            let StreamingOk::Complete(output, _) = self.$idx.parse_stream(&output).no_partial()? else {
+                            let PartialOk::Complete(output, _) = self.$idx.partial_parse(&output).no_partial()? else {
                                 unreachable!()
                             };
                         )*
-                        let StreamingOk::Complete(output, _) = self.$last.parse_stream(&output).no_partial()? else {
+                        let PartialOk::Complete(output, _) = self.$last.partial_parse(&output).no_partial()? else {
                             unreachable!()
                         };
 
-                        Ok(StreamingOk::Complete(output, remaining))
+                        Ok(PartialOk::Complete(output, remaining))
                     }
 
                 }

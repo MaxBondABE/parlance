@@ -1,8 +1,8 @@
 use crate::{
     input::Input,
-    parse::{Choice, NotFound, Parser, ParserError, ParserResult, StreamingResult},
+    parse::{Choice, NotFound, Parser, ParserError, ParserResult, PartialResult},
     util::conditional_transforms::MaybeCompleteIf,
-    util::conditional_transforms::StreamingOrNotFound,
+    util::conditional_transforms::PartialOrNotFound,
 };
 
 use super::tag::tag;
@@ -22,7 +22,7 @@ pub fn line<I: Input>(s: &I) -> ParserResult<I, I> {
     }
 }
 
-pub fn line_stream<I: Input>(s: &I) -> StreamingResult<I, I> {
+pub fn partial_line<I: Input>(s: &I) -> PartialResult<I, I> {
     s.take_while(|c| c != '\n')
         .as_complete_if(|_, remaining| !remaining.is_empty())
         .ok_or_not_found()

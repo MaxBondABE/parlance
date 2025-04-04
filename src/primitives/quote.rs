@@ -2,8 +2,8 @@ use crate::{
     combinators::sandwich::sandwich,
     input::Input,
     parse::{
-        Choice, Never, NotFound, Parser, ParserError, ParserResult, StreamingChoice,
-        StreamingError, StreamingOk, StreamingParser, StreamingResult,
+        Choice, Never, NotFound, Parser, ParserError, ParserResult, PartialChoice, PartialError,
+        PartialOk, PartialParser, PartialResult,
     },
     primitives::tag::tag,
 };
@@ -17,46 +17,46 @@ pub const SINGLE_QUOTE_STR: &str = "'";
 pub const ESCAPE: char = '\\';
 pub const ESCAPE_STR: &str = "\\";
 
-pub fn single_quoted_stream<I: Input>(s: &I) -> StreamingResult<I, I, NotFound, UnterminatedQuote> {
+pub fn partial_single_quoted<I: Input>(s: &I) -> PartialResult<I, I, NotFound, UnterminatedQuote> {
     let Ok((_, remaining)) = tag(SINGLE_QUOTE_STR).parse(s) else {
-        return Err(StreamingError::Error(NotFound));
+        return Err(PartialError::Error(NotFound));
     };
 
     if let Some(idx) = find_quote_mark(SINGLE_QUOTE, remaining.as_str()) {
         let (output, r) = remaining.split_at(idx);
         let remaining = r.slice(SINGLE_QUOTE.len_utf8()..r.len());
-        Ok(StreamingOk::Complete(output, remaining))
+        Ok(PartialOk::Complete(output, remaining))
     } else {
-        Err(StreamingError::Incomplete(UnterminatedQuote))
+        Err(PartialError::Incomplete(UnterminatedQuote))
     }
 }
 
 pub fn single_quoted<I: Input>(s: &I) -> ParserResult<I, I, NotFound, UnterminatedQuote> {
-    single_quoted_stream.complete().parse(s)
+    partial_single_quoted.complete().parse(s)
 }
 
-pub fn double_quoted_stream<I: Input>(s: &I) -> StreamingResult<I, I, NotFound, UnterminatedQuote> {
+pub fn partial_double_quoted<I: Input>(s: &I) -> PartialResult<I, I, NotFound, UnterminatedQuote> {
     let Ok((_, remaining)) = tag(DOUBLE_QUOTE_STR).parse(s) else {
-        return Err(StreamingError::Error(NotFound));
+        return Err(PartialError::Error(NotFound));
     };
 
     if let Some(idx) = find_quote_mark(DOUBLE_QUOTE, remaining.as_str()) {
         let (output, r) = remaining.split_at(idx);
         let remaining = r.slice(DOUBLE_QUOTE.len_utf8()..r.len());
-        Ok(StreamingOk::Complete(output, remaining))
+        Ok(PartialOk::Complete(output, remaining))
     } else {
-        Err(StreamingError::Incomplete(UnterminatedQuote))
+        Err(PartialError::Incomplete(UnterminatedQuote))
     }
 }
 
 pub fn double_quoted<I: Input>(s: &I) -> ParserResult<I, I, NotFound, UnterminatedQuote> {
-    double_quoted_stream.complete().parse(s)
+    partial_double_quoted.complete().parse(s)
 }
 
-pub fn quoted_stream<I: Input>(s: &I) -> StreamingResult<I, I, NotFound, UnterminatedQuote> {
-    (single_quoted_stream, double_quoted_stream)
+pub fn partial_quoted<I: Input>(s: &I) -> PartialResult<I, I, NotFound, UnterminatedQuote> {
+    (partial_single_quoted, partial_double_quoted)
         .or()
-        .parse_stream(s)
+        .partial_parse(s)
 }
 
 pub fn quoted<I: Input>(s: &I) -> ParserResult<I, I, NotFound, UnterminatedQuote> {

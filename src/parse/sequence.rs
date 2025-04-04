@@ -1,11 +1,11 @@
 use crate::{
-    primitives::whitespace::{whitespace, whitespace_stream},
+    primitives::whitespace::{partial_whitespace, whitespace},
     util::{conditional_transforms::NoPartial, tuples::implement_for_tuples},
 };
 
 use super::{
-    Fusable, Incomplete, IntoStreamingParser, Never, NotFound, Parser, StreamingError, StreamingOk,
-    StreamingParser,
+    AsPartialParser, Fusable, Incomplete, Never, NotFound, Parser, PartialError, PartialOk,
+    PartialParser,
 };
 
 /// A set of parsers which consume the input in series, failing if any
@@ -27,21 +27,22 @@ pub trait Sequence<Input, Output, Error = NotFound, Failure = Never> {
     }
 }
 
-/// A tuple of streaming parsers, applied serially.
-pub trait StreamingSequence<Input, Output, Error = NotFound, Failure = Never> {
-    fn and(self) -> impl StreamingParser<Input, Output, Error, Failure>;
+/// A set of partial parsers which consume the input in series, failing if any
+/// one of them returns an error.
+pub trait PartialSequence<Input, Output, Error = NotFound, Failure = Never> {
+    fn and(self) -> impl PartialParser<Input, Output, Error, Failure>;
     fn with_sep<O, P>(self, sep: P) -> SeparatedSequence<Self, P>
     where
         Self: Sized,
     {
         SeparatedSequence { seq: self, sep }
     }
-    fn whitespace(self) -> SeparatedSequence<Self, impl StreamingParser<Input, Input>>
+    fn whitespace(self) -> SeparatedSequence<Self, impl PartialParser<Input, Input>>
     where
         Self: Sized,
         Input: crate::input::Input,
     {
-        self.with_sep::<Input, _>(whitespace_stream)
+        self.with_sep::<Input, _>(partial_whitespace)
     }
 }
 
@@ -136,32 +137,32 @@ macro_rules! sequence_impl (
                 Error,
                 Failure: From<Incomplete>,
                 [<Output $first>],
-                [<P $first>]: StreamingParser<Input, [<Output $first>], Error, Failure>,
+                [<P $first>]: PartialParser<Input, [<Output $first>], Error, Failure>,
                 $(
                     [<Output $mid>],
-                    [<P $mid>]: StreamingParser<Input, [<Output $mid>], Error, Failure>,
+                    [<P $mid>]: PartialParser<Input, [<Output $mid>], Error, Failure>,
                 )*
                 [<Output $last>],
-                [<P $last>]: StreamingParser<Input, [<Output $last>], Error, Failure>,
+                [<P $last>]: PartialParser<Input, [<Output $last>], Error, Failure>,
             >
-            StreamingSequence<Input, ([<Output $first>], $([<Output $mid>], )* [<Output $last>]), Error, Failure>
+            PartialSequence<Input, ([<Output $first>], $([<Output $mid>], )* [<Output $last>]), Error, Failure>
             for ([<P $first>],  $([<P $mid>], )* [<P $last>])
             {
-                fn and(self) -> impl StreamingParser<Input, ([<Output $first>], $([<Output $mid>],)* [<Output $last>]), Error, Failure> {
+                fn and(self) -> impl PartialParser<Input, ([<Output $first>], $([<Output $mid>],)* [<Output $last>]), Error, Failure> {
                     move |input: &Input| {
-                        let StreamingOk::Complete([<output_ $first>], remaining) = self.$first.parse_stream(input).no_partial()? else {
+                        let PartialOk::Complete([<output_ $first>], remaining) = self.$first.partial_parse(input).no_partial()? else {
                             unreachable!()
                         };
                         $(
-                            let StreamingOk::Complete([<output_ $mid>], remaining) = self.$mid.parse_stream(input).no_partial()? else {
+                            let PartialOk::Complete([<output_ $mid>], remaining) = self.$mid.partial_parse(input).no_partial()? else {
                                 unreachable!()
                             };
                         )*
-                        let StreamingOk::Complete([<output_ $last>], remaining) = self.$last.parse_stream(input).no_partial()? else {
+                        let PartialOk::Complete([<output_ $last>], remaining) = self.$last.partial_parse(input).no_partial()? else {
                             unreachable!()
                         };
 
-                        Ok(StreamingOk::Complete(
+                        Ok(PartialOk::Complete(
                             (
                                 [<output_ $first>],
                                 $([<output_ $mid>], )*

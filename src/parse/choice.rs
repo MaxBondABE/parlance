@@ -1,15 +1,15 @@
 use crate::util::tuples::implement_for_tuples;
 
-use super::{Never, NotFound, Parser, StreamingParser, StreamingError, ParserError};
+use super::{Never, NotFound, Parser, ParserError, PartialError, PartialParser};
 
 /// A tuple of parsers. Returns the first to succeed.
 pub trait Choice<Input, Output, Error = NotFound, Failure = Never> {
     fn or(self) -> impl Parser<Input, Output, NotFound, Failure>;
 }
 
-/// A tuple of streaming parsers. Returns the first to succeed.
-pub trait StreamingChoice<Input, Output, Error = NotFound, Failure = Never> {
-    fn or(self) -> impl StreamingParser<Input, Output, NotFound, Failure>;
+/// A tuple of partial parsers. Returns the first to succeed.
+pub trait PartialChoice<Input, Output, Error = NotFound, Failure = Never> {
+    fn or(self) -> impl PartialParser<Input, Output, NotFound, Failure>;
 }
 
 macro_rules! choice_impl (
@@ -48,26 +48,26 @@ macro_rules! choice_impl (
                 Output,
                 Error,
                 Failure,
-                $([<P $idx>]: StreamingParser<Input, Output, Error, Failure>, )*
-                [<P $last>]: StreamingParser<Input, Output, Error, Failure>,
-                > StreamingChoice<Input, Output, Error, Failure> for ($([<P $idx>], )* [<P $last>])
+                $([<P $idx>]: PartialParser<Input, Output, Error, Failure>, )*
+                [<P $last>]: PartialParser<Input, Output, Error, Failure>,
+                > PartialChoice<Input, Output, Error, Failure> for ($([<P $idx>], )* [<P $last>])
             {
-                fn or(self) -> impl StreamingParser<Input, Output, NotFound, Failure> {
+                fn or(self) -> impl PartialParser<Input, Output, NotFound, Failure> {
                     move |input: &Input| {
                         $(
-                            match self.$idx.parse_stream(input) {
+                            match self.$idx.partial_parse(input) {
                                 Ok(x) => return Ok(x),
-                                Err(StreamingError::Error(_)) => (),
-                                Err(StreamingError::Incomplete(e)) => return Err(StreamingError::Incomplete(e)),
-                                Err(StreamingError::Failure(e)) => return Err(StreamingError::Failure(e)),
+                                Err(PartialError::Error(_)) => (),
+                                Err(PartialError::Incomplete(e)) => return Err(PartialError::Incomplete(e)),
+                                Err(PartialError::Failure(e)) => return Err(PartialError::Failure(e)),
                             }
                         )*
 
-                        match self.$last.parse_stream(input) {
+                        match self.$last.partial_parse(input) {
                             Ok(x) => Ok(x),
-                            Err(StreamingError::Error(_)) => Err(StreamingError::Error(NotFound)),
-                            Err(StreamingError::Incomplete(e)) => return Err(StreamingError::Incomplete(e)),
-                            Err(StreamingError::Failure(e)) => Err(StreamingError::Failure(e)),
+                            Err(PartialError::Error(_)) => Err(PartialError::Error(NotFound)),
+                            Err(PartialError::Incomplete(e)) => return Err(PartialError::Incomplete(e)),
+                            Err(PartialError::Failure(e)) => Err(PartialError::Failure(e)),
                         }
                     }
                 }
