@@ -77,3 +77,63 @@ macro_rules! choice_impl (
 );
 
 implement_for_tuples!(choice_impl);
+
+#[cfg(test)]
+mod test {
+    use crate::{input::Input, parse::ParserResult};
+
+    use super::*;
+
+    #[test]
+    fn first_to_succeed_takes_precedence() {
+        #[derive(Eq, PartialEq, Debug)]
+        enum Output {
+            Foo,
+            Bar,
+        }
+        fn foo<I: Input>(s: &I) -> ParserResult<I, Output> {
+            Ok((Output::Foo, s.clone()))
+        }
+
+        struct Bar;
+        fn bar<I: Input>(s: &I) -> ParserResult<I, Output> {
+            Ok((Output::Bar, s.clone()))
+        }
+
+        assert_eq!((foo, bar).or().parse(&"baz"), Ok((Output::Foo, "baz")));
+        assert_eq!((bar, foo).or().parse(&"baz"), Ok((Output::Bar, "baz")));
+    }
+
+    #[test]
+    fn recoverable_errors_are_ignored() {
+        fn always_succeeds<I: Input>(s: &I) -> ParserResult<I, ()> {
+            Ok(((), s.clone()))
+        }
+
+        fn always_not_found<I: Input>(s: &I) -> ParserResult<I, ()> {
+            Err(ParserError::Error(NotFound))
+        }
+
+        assert_eq!(
+            (always_not_found, always_succeeds).or().parse(&"foo"),
+            Ok(((), "foo"))
+        );
+    }
+
+    #[test]
+    fn smoke() {
+        assert_eq!(("foo", "bar").or().parse(&"foo"), Ok(("foo", "")));
+        assert_eq!(("foo", "bar").or().parse(&"bar"), Ok(("bar", "")));
+        assert_eq!(
+            ("foo", "bar").or().parse(&"not_there"),
+            Err(ParserError::Error(NotFound))
+        );
+
+        assert_eq!(("bar", "foo").or().parse(&"foo"), Ok(("foo", "")));
+        assert_eq!(("bar", "foo").or().parse(&"bar"), Ok(("bar", "")));
+        assert_eq!(
+            ("bar", "foo").or().parse(&"not_there"),
+            Err(ParserError::Error(NotFound))
+        );
+    }
+}

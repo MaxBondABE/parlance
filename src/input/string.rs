@@ -14,7 +14,7 @@ impl Input for SharedString {
     fn len(&self) -> usize {
         self.range.len()
     }
-    fn empty(&self) -> Self {
+    fn take_none(&self) -> Self {
         Default::default()
     }
     fn slice(&self, range: Range<usize>) -> Self {

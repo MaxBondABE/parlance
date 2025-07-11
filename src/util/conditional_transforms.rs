@@ -1,44 +1,43 @@
 use crate::{
     input::Input,
     parse::{
-        Incomplete, Never, NotFound, ParserError, ParserResult, PartialError, PartialOk,
-        PartialResult,
+        Missing, Never, NotFound, Parser, ParserError, ParserResult, PartialError, PartialOk, PartialResult
     },
 };
 
-pub trait OrNotFound<I, O> {
+pub trait OkOrNotFound<I, O> {
     fn ok_or_not_found(self) -> ParserResult<I, O>;
 }
-impl<I, O> OrNotFound<I, O> for Option<(O, I)> {
+impl<I, O> OkOrNotFound<I, O> for Option<(O, I)> {
     fn ok_or_not_found(self) -> ParserResult<I, O> {
         self.ok_or(ParserError::Error(NotFound))
     }
 }
 
-pub trait OrFail<I, O, F> {
+pub trait OkOrFail<I, O, F> {
     fn ok_or_fail(self) -> ParserResult<I, O, Never, F>;
 }
-impl<I, O, F: Default> OrFail<I, O, F> for Option<(O, I)> {
+impl<I, O, F: Default> OkOrFail<I, O, F> for Option<(O, I)> {
     fn ok_or_fail(self) -> ParserResult<I, O, Never, F> {
         self.ok_or_else(|| ParserError::Failure(Default::default()))
     }
 }
 
-pub trait PartialOrNotFound<I, O> {
+pub trait PartialOkOrNotFound<I, O> {
     fn ok_or_not_found(self) -> PartialResult<I, O>;
 }
-impl<I, O> PartialOrNotFound<I, O> for Option<PartialOk<I, O>> {
+impl<I, O> PartialOkOrNotFound<I, O> for Option<PartialOk<I, O>> {
     fn ok_or_not_found(self) -> PartialResult<I, O> {
         self.ok_or(PartialError::Error(NotFound))
     }
 }
 
-pub trait OrIncomplete<I, O> {
-    fn ok_or_incomplete(self) -> PartialResult<I, O, Never, Incomplete>;
+pub trait OkOrIncomplete<I, O> {
+    fn ok_or_incomplete(self) -> PartialResult<I, O, Never, Missing>;
 }
-impl<I, O> OrIncomplete<I, O> for Option<PartialOk<I, O>> {
-    fn ok_or_incomplete(self) -> PartialResult<I, O, Never, Incomplete> {
-        self.ok_or(PartialError::Incomplete(Incomplete))
+impl<I, O> OkOrIncomplete<I, O> for Option<PartialOk<I, O>> {
+    fn ok_or_incomplete(self) -> PartialResult<I, O, Never, Missing> {
+        self.ok_or(PartialError::Incomplete(Missing))
     }
 }
 
@@ -146,11 +145,11 @@ impl<I, O, E, F> EitherCompleteIf<I, O, E, F> for PartialResult<I, O, E, F> {
 pub trait NoPartial<Input, Output, Error, Failure> {
     fn no_partial(self) -> PartialResult<Input, Output, Error, Failure>;
 }
-impl<I, O, E, F: From<Incomplete>> NoPartial<I, O, E, F> for PartialResult<I, O, E, F> {
+impl<I, O, E, F: From<Missing>> NoPartial<I, O, E, F> for PartialResult<I, O, E, F> {
     fn no_partial(self) -> PartialResult<I, O, E, F> {
         match self {
             Ok(PartialOk::Complete(o, r)) => Ok(PartialOk::Complete(o, r)),
-            Ok(PartialOk::Partial(o, r)) => Err(PartialError::Failure(Incomplete.into())),
+            Ok(PartialOk::Partial(o, r)) => Err(PartialError::Failure(Missing.into())),
             Err(e) => Err(e),
         }
     }

@@ -8,7 +8,7 @@ use crate::{
     parse::{Choice, Fusable, NotFound, Parser, ParserError, ParserResult, Sequence},
     primitives::tag::tag_no_case,
     strfuse,
-    util::conditional_transforms::OrNotFound,
+    util::conditional_transforms::OkOrNotFound,
 };
 
 pub fn sign<I: Input>(s: &I) -> ParserResult<I, I> {
@@ -23,15 +23,15 @@ pub fn digits_with_decimal<I: Input>(s: &I) -> ParserResult<I, I> {
     strfuse!((digits, ".", digits)).parse(s)
 }
 
-pub fn plain_number<I: Input>(s: &I) -> ParserResult<I, I> {
+pub fn signed_integer_number<I: Input>(s: &I) -> ParserResult<I, I> {
     strfuse!((sign.opt(), digits)).parse(s)
 }
 
-pub fn positive_number<I: Input>(s: &I) -> ParserResult<I, I> {
+pub fn positive_integer_number<I: Input>(s: &I) -> ParserResult<I, I> {
     strfuse!(("+".opt(), digits)).parse(s)
 }
 
-pub fn negative_number<I: Input>(s: &I) -> ParserResult<I, I> {
+pub fn negative_integer_number<I: Input>(s: &I) -> ParserResult<I, I> {
     strfuse!(("-", digits)).parse(s)
 }
 
@@ -52,9 +52,13 @@ pub fn scientific_number<I: Input>(s: &I) -> ParserResult<I, I> {
     .parse(s)
 }
 
-pub fn special<I: Input>(s: &I) -> ParserResult<I, I> {
+pub fn special_number<I: Input>(s: &I) -> ParserResult<I, I> {
     (
-        strfuse!((sign.opt(), "inf", "inity".opt())),
+        strfuse!((
+            sign.opt(),
+            tag_no_case("inf"),
+            tag_no_case("inity").opt() // Handle inf vs infinity as an optional suffix
+        )),
         tag_no_case("NaN"),
     )
         .or()
@@ -83,8 +87,8 @@ impl<I: Input> NumberToken<I> {
         (
             scientific_number.map(NumberToken::Scientific),
             number_with_decimal.map(NumberToken::WithDecimal),
-            plain_number.map(NumberToken::Plain),
-            special.map(NumberToken::Special),
+            signed_integer_number.map(NumberToken::Plain),
+            special_number.map(NumberToken::Special),
         )
             .or()
             .parse(s)
@@ -92,7 +96,7 @@ impl<I: Input> NumberToken<I> {
 }
 
 pub fn integer<I: Input, O: Integer>(s: &I) -> ParserResult<I, O, NotFound, <O as FromStr>::Err> {
-    if let Ok((n, remaining)) = plain_number.parse(s) {
+    if let Ok((n, remaining)) = signed_integer_number.parse(s) {
         match O::from_str(n.as_str()) {
             Ok(output) => Ok((output, remaining)),
             Err(e) => Err(ParserError::Failure(e)),
@@ -105,7 +109,7 @@ pub fn integer<I: Input, O: Integer>(s: &I) -> ParserResult<I, O, NotFound, <O a
 pub fn unsigned_integer<I: Input, O: UnsignedInteger>(
     s: &I,
 ) -> ParserResult<I, O, NotFound, <O as FromStr>::Err> {
-    if let Ok((n, remaining)) = positive_number.parse(s) {
+    if let Ok((n, remaining)) = positive_integer_number.parse(s) {
         match O::from_str(n.as_str()) {
             Ok(output) => Ok((output, remaining)),
             Err(e) => Err(ParserError::Failure(e)),
@@ -230,7 +234,7 @@ mod test {
 
     #[test]
     fn plain() {
-        assert_eq!(plain_number.parse(&"123"), Ok(("123", "")));
+        assert_eq!(signed_integer_number.parse(&"123"), Ok(("123", "")));
     }
 
     #[test]
@@ -260,6 +264,68 @@ mod test {
         assert_eq!(Number::parse.parse(&"0"), Ok((Number::Unsigned(0), "")));
         assert_eq!(Number::parse.parse(&"0.0"), Ok((Number::Real(0.0), "")));
         assert_eq!(Number::parse.parse(&"-0.0"), Ok((Number::Real(0.0), "")));
+    }
+
+    #[test]
+    fn special_floats() {
+        assert_eq!(special_number.parse(&"nan"), Ok(("nan", "")));
+        assert_eq!(special_number.parse(&"NaN"), Ok(("NaN", "")));
+        assert_eq!(special_number.parse(&"inf"), Ok(("inf", "")));
+        assert_eq!(special_number.parse(&"+inf"), Ok(("+inf", "")));
+        assert_eq!(special_number.parse(&"-inf"), Ok(("-inf", "")));
+
+        /// NaN != NaN so can't use assert_eq!()
+        match Number::parse.parse(&f32::NAN.to_string()) {
+            Ok((Number::Real(x), _)) => {
+                assert!(x.is_nan())
+            }
+            Ok(x) => panic!("Wrong type of number: {:?}", x),
+            Err(e) => panic!("Error: {:?}", e),
+        };
+        match Number::parse.parse(&"nan") {
+            Ok((Number::Real(x), _)) => {
+                assert!(x.is_nan())
+            }
+            Ok(x) => panic!("Wrong type of number: {:?}", x),
+            Err(e) => panic!("Error: {:?}", e),
+        };
+        match Number::parse.parse(&"NaN") {
+            Ok((Number::Real(x), _)) => {
+                assert!(x.is_nan())
+            }
+            Ok(x) => panic!("Error parsing special float: Wrong type of number: {:?}", x),
+            Err(e) => panic!("Error parsing special float: {:?}", e),
+        };
+
+        assert_eq!(
+            Number::parse.parse(&f32::INFINITY.to_string()),
+            Ok((Number::Real(f32::INFINITY), "".to_string()))
+        );
+        assert_eq!(
+            Number::parse.parse(&"inf"),
+            Ok((Number::Real(f32::INFINITY), ""))
+        );
+        assert_eq!(
+            Number::parse.parse(&"+inf"),
+            Ok((Number::Real(f32::INFINITY), ""))
+        );
+
+        assert_eq!(
+            Number::parse.parse(&f32::NEG_INFINITY.to_string()),
+            Ok((Number::Real(f32::NEG_INFINITY), "".to_string()))
+        );
+        assert_eq!(
+            Number::parse.parse(&"infinity"),
+            Ok((Number::Real(f32::INFINITY), ""))
+        );
+        assert_eq!(
+            Number::parse.parse(&"-inf"),
+            Ok((Number::Real(f32::NEG_INFINITY), ""))
+        );
+        assert_eq!(
+            Number::parse.parse(&"-infinity"),
+            Ok((Number::Real(f32::NEG_INFINITY), ""))
+        );
     }
 }
 

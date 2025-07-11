@@ -13,3 +13,4 @@ proptest = "1.6.0"
 [features]
 case_sensitive_tags = []
 case_insensitive_tags = []
+partial_tags = []

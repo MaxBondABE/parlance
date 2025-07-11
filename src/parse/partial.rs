@@ -1,7 +1,7 @@
 use std::fmt;
 
 use super::{
-    Fusable, Incomplete, Never, NotFound, Parser, ParserError, PartialChoice, PartialCompose,
+    Fusable, Missing, Never, NotFound, Parser, ParserError, PartialChoice, PartialPipeline,
     PartialSequence,
 };
 
@@ -221,7 +221,7 @@ pub trait PartialParser<Input, Output, Error = NotFound, Failure = Never> {
     ) -> impl PartialParser<Input, (Output, OtherOutput), Error, Failure>
     where
         Self: Sized,
-        Failure: From<Incomplete>,
+        Failure: From<Missing>,
     {
         (self, other).and()
     }
@@ -231,7 +231,7 @@ pub trait PartialParser<Input, Output, Error = NotFound, Failure = Never> {
     ) -> impl PartialParser<Input, Output, NotFound, Failure>
     where
         Self: Sized,
-        Failure: From<Incomplete>,
+        Failure: From<Missing>,
     {
         (self, other).or()
     }
@@ -241,16 +241,22 @@ pub trait PartialParser<Input, Output, Error = NotFound, Failure = Never> {
     ) -> impl PartialParser<Input, O, Error, Failure>
     where
         Self: Sized,
-        Failure: From<Incomplete>,
+        Failure: From<Missing>,
     {
-        PartialCompose::map((self, other))
+        PartialPipeline::pipe((self, other))
+    }
+    fn as_partial(self) -> impl PartialParser<Input, Output, Error, Failure>
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 
 pub type PartialResult<Input, Output, Error = NotFound, Failure = Never> =
     Result<PartialOk<Input, Output>, PartialError<Error, Failure>>;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum PartialOk<Input, Output> {
     Complete(Output, Input),
     Partial(Output, Input),
@@ -275,7 +281,7 @@ impl<I, O: Fusable> Fusable for PartialOk<I, O> {
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum PartialError<Error, Failure> {
     Incomplete(Failure),
     Error(Error),
@@ -315,6 +321,7 @@ impl fmt::Display for ErrorWasIncomplete {
     }
 }
 
+// Implements PartialParser for all functions with the correct signature.
 impl<
         Input,
         Output,
@@ -325,26 +332,5 @@ impl<
 {
     fn partial_parse(&self, input: &Input) -> PartialResult<Input, Output, Error, Failure> {
         self(input)
-    }
-}
-
-pub trait AsPartialParser<Input, Output, Error, Failure> {
-    fn as_partial(self) -> impl PartialParser<Input, Output, Error, Failure>;
-}
-impl<I, O, E, F, T: Parser<I, O, E, F>> AsPartialParser<I, O, E, F> for T {
-    fn as_partial(self) -> impl PartialParser<I, O, E, F> {
-        move |input: &I| match self.parse(input) {
-            Ok((o, r)) => Ok(PartialOk::Complete(o, r)),
-            Err(e) => Err(e.into()),
-        }
-    }
-}
-
-pub trait AsPartialResult<Input, Output, Error, Failure> {
-    fn as_partial(self) -> PartialResult<Input, Output, Error, Failure>;
-}
-impl<I, O, E, F> AsPartialResult<I, O, E, F> for Result<PartialOk<I, O>, ParserError<E, F>> {
-    fn as_partial(self) -> PartialResult<I, O, E, F> {
-        self.map_err(Into::into)
     }
 }

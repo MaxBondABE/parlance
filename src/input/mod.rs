@@ -6,14 +6,15 @@ pub mod transform;
 
 /// A string-like data structure which can be consumed by a `Parser`.
 pub trait Input: Clone + fmt::Debug {
+    /// Access the text as a string.
     fn as_str(&self) -> &str;
+    /// Returns the length of the text.
     fn len(&self) -> usize {
         self.as_str().len()
     }
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
-    fn empty(&self) -> Self;
     fn slice(&self, range: Range<usize>) -> Self;
     fn split_at(&self, mid: usize) -> (Self, Self)
     where
@@ -27,6 +28,7 @@ pub trait Input: Clone + fmt::Debug {
     {
         self.slice(0..count)
     }
+    fn take_none(&self) -> Self;
     fn take_checked(&self, count: usize) -> Option<Self>
     where
         Self: Sized,
@@ -84,7 +86,7 @@ pub trait Input: Clone + fmt::Debug {
             if tag
                 .chars()
                 .zip(s.as_str().chars())
-                .all(|(a, b)| a.to_ascii_lowercase() == b.to_ascii_lowercase())
+                .all(|(a, b)| case_insensitive_comparison(a, b))
             {
                 return Some((s, remaining));
             }
@@ -94,6 +96,28 @@ pub trait Input: Clone + fmt::Debug {
     }
 }
 
+fn case_insensitive_comparison(a: char, b: char) -> bool {
+    let mut b_lower = b.to_lowercase();
+    for i in a.to_lowercase() {
+        if let Some(j) = b_lower.next() {
+            if i != j {
+                return false;
+            }
+        } else {
+            // a was longer than b
+            return false;
+        }
+    }
+
+    if b_lower.next().is_some() {
+        // b was longer than a
+        return false;
+    }
+
+    true
+}
+
+
 impl Input for &str {
     fn as_str(&self) -> &str {
         self
@@ -101,7 +125,7 @@ impl Input for &str {
     fn len(&self) -> usize {
         str::len(self)
     }
-    fn empty(&self) -> Self {
+    fn take_none(&self) -> Self {
         Default::default()
     }
     fn slice(&self, range: Range<usize>) -> Self {
@@ -134,7 +158,7 @@ impl Input for String {
     fn len(&self) -> usize {
         String::len(self)
     }
-    fn empty(&self) -> Self {
+    fn take_none(&self) -> Self {
         Default::default()
     }
     fn slice(&self, range: Range<usize>) -> Self {

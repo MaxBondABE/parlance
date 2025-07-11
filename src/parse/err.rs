@@ -7,22 +7,22 @@ impl From<Never> for NotFound {
         unreachable!()
     }
 }
-impl From<Incomplete> for NotFound {
-    fn from(value: Incomplete) -> Self {
+impl From<Missing> for NotFound {
+    fn from(value: Missing) -> Self {
         Default::default()
     }
 }
 
-/// A typical incomplete failure
+/// A typical incomplete failure of a `PartialParser`
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Incomplete;
+pub struct Missing;
 
-impl From<Never> for Incomplete {
+impl From<Never> for Missing {
     fn from(value: Never) -> Self {
         unreachable!()
     }
 }
-impl From<NotFound> for Incomplete {
+impl From<NotFound> for Missing {
     fn from(value: NotFound) -> Self {
         Default::default()
     }

@@ -1,7 +1,7 @@
 /// Exports the types required for end use.
-// Concrete types & aliases
+// Result utils (Error types, Result aliases, etc.)
 pub use crate::parse::{
-    Incomplete, Never, NotFound, ParserError, ParserResult, PartialError, PartialOk, PartialResult,
+    Missing, Never, NotFound, ParserError, ParserResult, PartialError, PartialOk, PartialResult,
 };
 
 // Implementable traits
@@ -11,11 +11,12 @@ pub use crate::parse::{Parser, PartialParser};
 // Automaticly implemented traits
 pub use crate::{
     parse::{
-        Choice as _, Compose as _, FuseSequence as _, PartialChoice as _, PartialCompose as _,
-        Sequence as _,
+        Choice as _, Pipeline as _, FuseSequence as _, PartialChoice as _, PartialPipeline as _,
+        PartialFuseSequence as _, PartialSequence as _, Sequence as _,
     },
+    util::as_partial::AsPartialParser as _,
     util::conditional_transforms::{
-        EitherCompleteIf as _, MaybeCompleteIf as _, NoPartial as _, OrFail as _,
-        OrIncomplete as _, OrNotFound as _, PartialOrNotFound as _,
+        CompleteIf as _, EitherCompleteIf as _, MaybeCompleteIf as _, MaybeCompleteIf as _,
+        NoPartial as _, OkOrFail as _, OkOrIncomplete as _, OkOrNotFound as _, PartialOkOrNotFound as _,
     },
 };

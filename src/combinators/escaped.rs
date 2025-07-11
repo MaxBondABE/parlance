@@ -117,7 +117,7 @@ mod test {
     #[test]
     fn simple() {
         fn never_escape<I: Input>(s: &I) -> ParserResult<I, EscapeToken<I>> {
-            Ok((EscapeToken::Unescaped(s.clone()), s.empty()))
+            Ok((EscapeToken::Unescaped(s.clone()), s.take_none()))
         }
         assert_eq!(
             escape(never_escape).parse(&"foo"),
@@ -125,7 +125,7 @@ mod test {
         );
 
         fn always_escape<I: Input>(s: &I) -> ParserResult<I, EscapeToken<I>> {
-            Ok((EscapeToken::Escaped("bar"), s.empty()))
+            Ok((EscapeToken::Escaped("bar"), s.take_none()))
         }
         assert_eq!(
             escape(always_escape).parse(&"foo"),

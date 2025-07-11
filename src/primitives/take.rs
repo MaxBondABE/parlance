@@ -10,7 +10,7 @@ pub fn take_while0<I: Input, Predicate: Fn(char) -> bool>(
         if let Some((s, remaining)) = input.take_while(&predicate) {
             Ok((remaining, s))
         } else {
-            Ok((input.clone(), input.empty()))
+            Ok((input.clone(), input.take_none()))
         }
     }
 }
@@ -34,7 +34,7 @@ pub fn take_until0<I: Input, F, Predicate: Fn(char) -> bool>(
         if let Some((s, remaining)) = input.take_until(&predicate) {
             Ok((remaining, s))
         } else {
-            Ok((input.clone(), input.empty()))
+            Ok((input.clone(), input.take_none()))
         }
     }
 }

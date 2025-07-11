@@ -18,10 +18,34 @@ macro_rules! strfuse (
     }
 );
 
+pub use strfuse;
+
+#[macro_export]
+macro_rules! strfuse_ws (
+    ($x: expr) => {
+        {
+            {
+                use $crate::parse::{Sequence, FuseSequence};
+                fn fuse_impl<I: $crate::input::Input>(s: &I) -> $crate::parse::ParserResult<I, I> {
+                    if let Ok((len, _)) = $x.whitespace().output_len().parse(&s.as_str()) {
+                        Ok(s.split_at(len))
+                    } else {
+                        Err($crate::parse::ParserError::Error($crate::parse::NotFound))
+                    }
+                }
+
+                fuse_impl
+            }
+        }
+    }
+);
+
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::parse::{Fusable, FuseSequence, Parser, ParserResult, Sequence};
+    use crate::parse::{
+        Fusable, FuseSequence, Parser, ParserResult, PartialOk, PartialParser, Sequence,
+    };
 
     #[test]
     fn simple() {

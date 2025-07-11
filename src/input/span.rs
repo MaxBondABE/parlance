@@ -73,7 +73,7 @@ impl Input for Span {
     fn len(&self) -> usize {
         self.range.len()
     }
-    fn empty(&self) -> Self {
+    fn take_none(&self) -> Self {
         Self {
             source: self.source.clone(),
             range: self.range.start..self.range.start,
@@ -300,8 +300,8 @@ impl Input for TransformedSpan {
     fn as_str(&self) -> &str {
         self.content.as_str()
     }
-    fn empty(&self) -> Self {
-        self.with_content(self.content.empty())
+    fn take_none(&self) -> Self {
+        self.with_content(self.content.take_none())
     }
     fn slice(&self, range: Range<usize>) -> Self {
         self.with_content(self.content.slice(range))

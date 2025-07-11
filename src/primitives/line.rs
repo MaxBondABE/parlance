@@ -2,7 +2,7 @@ use crate::{
     input::Input,
     parse::{Choice, NotFound, Parser, ParserError, ParserResult, PartialResult},
     util::conditional_transforms::MaybeCompleteIf,
-    util::conditional_transforms::PartialOrNotFound,
+    util::conditional_transforms::PartialOkOrNotFound,
 };
 
 use super::tag::tag;
@@ -18,7 +18,7 @@ pub fn line<I: Input>(s: &I) -> ParserResult<I, I> {
             Ok((line, remaining))
         }
     } else {
-        Ok((s.empty(), s.clone()))
+        Ok((s.take_none(), s.clone()))
     }
 }
 

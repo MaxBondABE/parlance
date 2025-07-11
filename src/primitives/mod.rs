@@ -7,6 +7,7 @@
 
 */
 
+pub mod comment;
 pub mod line;
 pub mod numbers;
 pub mod quote;
@@ -14,6 +15,7 @@ pub mod tag;
 pub mod take;
 pub mod whitespace;
 
+pub use comment::*;
 pub use line::*;
 pub use numbers::*;
 pub use quote::*;
