@@ -105,10 +105,10 @@ macro_rules! sequence_impl (
                 Error,
                 Failure,
                 Sep: Parser<Input, (), Error, Failure>,
-                [<Output $first>],
+                [<Output $first>]: Fusable,
                 [<P $first>]: Parser<Input, [<Output $first>], Error, Failure>,
                 $(
-                    [<Output $mid>],
+                    [<Output $mid>]: Fusable,
                     [<P $mid>]: Parser<Input, [<Output $mid>], Error, Failure>,
                 )*
                 [<Output $last>],
@@ -119,12 +119,21 @@ macro_rules! sequence_impl (
             {
                 fn and(self) -> impl Parser<Input, ([<Output $first>], $([<Output $mid>], )* [<Output $last>]), Error, Failure> {
                     move |input: &Input| {
-                        let ([<output_ $first>], remaining) = self.seq.$first.parse(input)?;
+                        let ([<output_ $first>], mut remaining) = self.seq.$first.parse(input)?;
+                        let last_len = [<output_ $first>].len();
                         $(
-                            let (_, remaining) = self.sep.parse(&remaining)?;
-                            let ([<output_ $mid>], remaining) = self.seq.$mid.parse(&remaining)?;
+                            if last_len > 0 {
+                                let (_, r) = self.sep.parse(&remaining)?;
+                                remaining = r;
+                            }
+                            let ([<output_ $mid>], r) = self.seq.$mid.parse(&remaining)?;
+                            remaining = r;
+                            let last_len = [<output_ $mid>].len();
                         )*
-                        let (_, remaining) = self.sep.parse(&remaining)?;
+                        if last_len > 0 {
+                            let (_, r) = self.sep.parse(&remaining)?;
+                            remaining = r;
+                        }
                         let ([<output_ $last>], remaining) = self.seq.$last.parse(&remaining)?;
 
                         Ok((
@@ -186,10 +195,10 @@ macro_rules! sequence_impl (
                 Error,
                 Failure: From<Missing>,
                 Sep: PartialParser<Input, (), Error, Failure>,
-                [<Output $first>],
+                [<Output $first>]: Fusable,
                 [<P $first>]: PartialParser<Input, [<Output $first>], Error, Failure>,
                 $(
-                    [<Output $mid>],
+                    [<Output $mid>]: Fusable,
                     [<P $mid>]: PartialParser<Input, [<Output $mid>], Error, Failure>,
                 )*
                 [<Output $last>],
@@ -203,16 +212,22 @@ macro_rules! sequence_impl (
                         let PartialOk::Complete([<output_ $first>], remaining) = self.seq.$first.partial_parse(input).no_partial()? else {
                             unreachable!()
                         };
-                        let PartialOk::Complete(_, remaining) = self.sep.partial_parse(input).no_partial()? else {
-                            unreachable!()
-                        };
+                        let last_len = [<output_ $first>].len();
+                        if last_len > 0 {
+                            let PartialOk::Complete(_, remaining) = self.sep.partial_parse(input).no_partial()? else {
+                                unreachable!()
+                            };
+                        }
                         $(
                             let PartialOk::Complete([<output_ $mid>], remaining) = self.seq.$mid.partial_parse(&remaining).no_partial()? else {
                                 unreachable!()
                             };
-                            let PartialOk::Complete(_, remaining) = self.sep.partial_parse(input).no_partial()? else {
-                                unreachable!()
-                            };
+                            let last_len = [<output_ $mid>].len();
+                            if last_len > 0 {
+                                let PartialOk::Complete(_, remaining) = self.sep.partial_parse(input).no_partial()? else {
+                                    unreachable!()
+                                };
+                            }
                         )*
                         let PartialOk::Complete([<output_ $last>], remaining) = self.seq.$last.partial_parse(&remaining).no_partial()? else {
                             unreachable!()
@@ -265,6 +280,16 @@ mod test {
 
         assert_eq!(parser.parse(&"foo"), Err(ParserError::Error(NotFound)));
         assert_eq!(parser.parse(&"bar"), Err(ParserError::Error(NotFound)));
+    }
+
+    #[test]
+    fn separator_is_not_inserted_after_optional_parser_if_it_is_missing() {
+        let parser = ("foo", "bar".opt(), "baz").with_sep("x").and();
+        assert_eq!(
+            parser.parse(&"fooxbarxbaz"),
+            Ok((("foo", Some("bar"), "baz"), ""))
+        );
+        assert_eq!(parser.parse(&"fooxbaz"), Ok((("foo", None, "baz"), "")));
     }
 
     #[test]

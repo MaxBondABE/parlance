@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::primitives::whitespace::whitespace;
+use crate::{combinators::sandwich, primitives::whitespace::whitespace};
 
 mod choice;
 mod err;
@@ -27,7 +27,7 @@ pub use sequence::{PartialSequence, SeparatedSequence, Sequence};
 /// parts. Parsers can be composed in the following ways:
 /// - `Sequence` allows you to
 /// - `Choice`
-/// - `Pipe`
+/// - `Pipeline`
 /// - `Fuse`
 pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
     /// Attempt to consume the provided input, returning the parsed token

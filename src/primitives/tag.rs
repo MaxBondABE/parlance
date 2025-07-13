@@ -24,7 +24,9 @@ impl<I: Input> Parser<I, I> for &str {
     fn parse(&self, input: &I) -> ParserResult<I, I> {
         #[cfg(all(feature = "case_sensitive_tags", feature = "case_insensitive_tags"))]
         {
-            compile_error!("Tags must be sensitive or insensitive to case, they cannot be both.");
+            compile_error!(
+                "`case_sensitive_tags` and `case_insensitive_tags` are mutually exclusive."
+            );
         }
 
         #[cfg(any(
