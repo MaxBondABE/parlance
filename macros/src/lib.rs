@@ -98,7 +98,7 @@ fn extract_tag(attrs: &[Attribute], name: &Ident) -> LitStr {
     LitStr::new(&tag.unwrap_or(name.to_string().to_lowercase()), name.span())
 }
 
-#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Default)]
 enum CaseSensitivity {
     #[default]
     Auto,
