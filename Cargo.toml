@@ -1,9 +1,13 @@
+[workspace]
+members = ["parlance-macros"]
+
 [package]
 name = "parlance"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+parlance-macros = { version = "0.1.0", path = "parlance-macros" }
 paste = "1.0.15"
 thiserror = "2.0.11"
 
@@ -13,4 +17,5 @@ proptest = "1.6.0"
 [features]
 case_sensitive_tags = []
 case_insensitive_tags = []
+complete_tags = []
 partial_tags = []

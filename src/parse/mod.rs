@@ -17,6 +17,8 @@ pub use partial::{ErrorWasIncomplete, PartialError, PartialOk, PartialParser, Pa
 pub use pipe::{PartialPipeline, Pipeline};
 pub use sequence::{PartialSequence, SeparatedSequence, Sequence};
 
+pub use parlance_macros::Parser;
+
 /// A parsing operation.
 ///
 /// A parsing operation is any function implementing `Fn(&Input) -> ParserResult<Input, Output,
