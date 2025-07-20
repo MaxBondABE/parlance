@@ -11,7 +11,7 @@ mod sequence;
 mod stream;
 
 pub use choice::{Choice, PartialChoice};
-pub use err::{Missing, Never, NotFound};
+pub use err::{Missing, Never, NotFound, FromNever};
 pub use fuse::{Fusable, FuseSequence, PartialFuseSequence};
 pub use partial::{ErrorWasIncomplete, PartialError, PartialOk, PartialParser, PartialResult};
 pub use pipe::{PartialPipeline, Pipeline};

@@ -41,3 +41,7 @@ pub struct Never(Neverever);
 /// a `Never`. This must be enforced via code review.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct Neverever;
+
+pub trait FromNever: From<Never> {}
+impl<T: From<Never>> FromNever for T {}
+pub use parlance_macros::FromNever;
