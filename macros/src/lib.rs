@@ -16,15 +16,11 @@ pub fn derive_parser(input: TokenStream) -> TokenStream {
             .to_compile_error()
             .into();
     };
-    let Ok(default_sensitivity) = CaseSensitivity::new(&input.attrs).map(|x| x.unwrap_or_default())
-    else {
-        return syn::Error::new_spanned(
-            enum_name,
-            "#[case_sensitive] and #[case_insensitive] are mutually exclusive",
-        )
-        .to_compile_error()
-        .into();
-    };
+    let default_sensitivity =
+        match CaseSensitivity::new(&input.attrs).map(|x| x.unwrap_or_default()) {
+            Ok(s) => s,
+            Err(e) => return e.to_compile_error().into(),
+        };
 
     let variant_arms = data_enum.variants.iter().map(|variant| {
         let variant_name = &variant.ident;
@@ -38,18 +34,15 @@ pub fn derive_parser(input: TokenStream) -> TokenStream {
             .into();
         }
 
-        let tag = tag_literal(&variant.attrs, variant_name);
-
-        let Ok(sensitivity) =
-            CaseSensitivity::new(&variant.attrs).map(|x| x.unwrap_or(default_sensitivity))
-        else {
-            return syn::Error::new_spanned(
-                variant_name,
-                "#[case_sensitive] and #[case_insensitive] are mutually exclusive",
-            )
-            .to_compile_error()
-            .into();
+        let tag = match tag_literal(&variant.attrs, variant_name) {
+            Ok(tag) => tag,
+            Err(e) => return e.to_compile_error().into(),
         };
+        let sensitivity =
+            match CaseSensitivity::new(&variant.attrs).map(|x| x.unwrap_or(default_sensitivity)) {
+                Ok(s) => s,
+                Err(e) => return e.to_compile_error().into(),
+            };
 
         let parser = match sensitivity {
             CaseSensitivity::Auto => quote! { ::parlance::primitives::tag::tag_auto(#tag) },
@@ -83,7 +76,7 @@ pub fn derive_parser(input: TokenStream) -> TokenStream {
     parser_impl.into()
 }
 
-fn tag_literal(attrs: &[Attribute], name: &Ident) -> LitStr {
+fn tag_literal(attrs: &[Attribute], name: &Ident) -> Result<LitStr, syn::Error> {
     let mut tag = None;
     for attr in attrs {
         if attr.path().is_ident("tag") {
@@ -97,14 +90,27 @@ fn tag_literal(attrs: &[Attribute], name: &Ident) -> LitStr {
                         tag = Some(s.value());
                         break;
                     }
-                    _ => panic!("Tags must be string literals"),
+                    _ => {
+                        return Err(syn::Error::new_spanned(
+                            value,
+                            "Tags must be string literals",
+                        ));
+                    }
                 },
-                _ => panic!("Tags must be string literals"),
+                _ => {
+                    return Err(syn::Error::new_spanned(
+                        value,
+                        "Tags must be string literals",
+                    ));
+                }
             }
         }
     }
 
-    LitStr::new(&tag.unwrap_or(name.to_string().to_lowercase()), name.span())
+    Ok(LitStr::new(
+        &tag.unwrap_or(name.to_string().to_lowercase()),
+        name.span(),
+    ))
 }
 
 #[derive(Clone, Copy, Default)]
@@ -115,18 +121,24 @@ enum CaseSensitivity {
     Insensitive,
 }
 impl CaseSensitivity {
-    pub fn new(attrs: &[Attribute]) -> Result<Option<Self>, ()> {
+    pub fn new(attrs: &[Attribute]) -> Result<Option<Self>, syn::Error> {
         let mut output = None;
         for a in attrs.iter() {
             let path = a.path();
             if path.is_ident("case_sensitive") {
                 if output.is_some() {
-                    return Err(());
+                    return Err(syn::Error::new_spanned(
+                        path,
+                        "#[case_sensitive] and #[case_insensitive] are mutually exclusive",
+                    ));
                 }
                 output = Some(Self::Sensitive);
             } else if path.is_ident("case_insensitive") {
                 if output.is_some() {
-                    return Err(());
+                    return Err(syn::Error::new_spanned(
+                        path,
+                        "#[case_sensitive] and #[case_insensitive] are mutually exclusive",
+                    ));
                 }
                 output = Some(Self::Insensitive);
             }
@@ -147,7 +159,6 @@ pub fn derive_from_never(input: TokenStream) -> TokenStream {
     let from_impl = quote! {
         impl #impl_generics ::core::convert::From<::parlance::parse::Never>
         for #name #ty_generics #where_clause {
-
             fn from(_: ::parlance::parse::Never) -> Self {
                 unreachable!("Never is never constructed.")
             }

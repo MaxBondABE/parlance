@@ -5,7 +5,7 @@ use super::{
     PartialSequence,
 };
 
-pub trait PartialParser<Input, Output, Error = NotFound, Failure = Never> {
+pub trait PartialParser<Input: crate::input::Input, Output, Error = NotFound, Failure = Never> {
     fn partial_parse(&self, input: &Input) -> PartialResult<Input, Output, Error, Failure>;
     fn complete(self) -> impl Parser<Input, Output, Error, Failure>
     where
@@ -13,7 +13,7 @@ pub trait PartialParser<Input, Output, Error = NotFound, Failure = Never> {
     {
         move |input: &Input| match self.partial_parse(input) {
             Ok(PartialOk::Complete(o, r)) | Ok(PartialOk::Partial(o, r)) => Ok((o, r)),
-            Err(PartialError::Incomplete(e)) => Err(ParserError::Failure(e)),
+            Err(PartialError::Incomplete(e, l)) => Err(ParserError::Failure(e, l)),
             Err(e) => Err(e.try_into().unwrap()),
         }
     }
@@ -24,12 +24,16 @@ pub trait PartialParser<Input, Output, Error = NotFound, Failure = Never> {
         move |input: &Input| match self.partial_parse(input) {
             Ok(PartialOk::Complete(o, remaining)) => Ok(PartialOk::Complete(f(o), remaining)),
             Ok(PartialOk::Partial(o, remaining)) => Ok(PartialOk::Partial(f(o), remaining)),
-            Err(PartialError::Incomplete(e)) => Err(PartialError::Incomplete(e)),
-            Err(PartialError::Error(e)) => Err(PartialError::Error(e)),
-            Err(PartialError::Failure(e)) => Err(PartialError::Failure(e)),
+            Err(PartialError::Incomplete(e, l)) => Err(PartialError::Incomplete(e, l)),
+            Err(PartialError::Error(e, l)) => Err(PartialError::Error(e, l)),
+            Err(PartialError::Failure(e, l)) => Err(PartialError::Failure(e, l)),
         }
     }
-    fn map_err<E, F, Func: Fn(PartialError<Error, Failure>) -> PartialError<E, F>>(
+    fn map_err<
+        E,
+        F,
+        Func: Fn(PartialError<Error, Failure, Input::Location>) -> PartialError<E, F, Input::Location>,
+    >(
         self,
         f: Func,
     ) -> impl PartialParser<Input, Output, E, F>
@@ -47,10 +51,10 @@ pub trait PartialParser<Input, Output, Error = NotFound, Failure = Never> {
     {
         move |input: &Input| {
             self.partial_parse(input).map_err(|e| match e {
-                PartialError::Error(e) => PartialError::Error(f(e)),
+                PartialError::Error(e, l) => PartialError::Error(f(e), l),
 
-                PartialError::Incomplete(e) => PartialError::Incomplete(e),
-                PartialError::Failure(e) => PartialError::Failure(e),
+                PartialError::Incomplete(e, l) => PartialError::Incomplete(e, l),
+                PartialError::Failure(e, l) => PartialError::Failure(e, l),
             })
         }
     }
@@ -63,10 +67,10 @@ pub trait PartialParser<Input, Output, Error = NotFound, Failure = Never> {
     {
         move |input: &Input| {
             self.partial_parse(input).map_err(|e| match e {
-                PartialError::Incomplete(e) => PartialError::Incomplete(f(e)),
-                PartialError::Failure(e) => PartialError::Failure(f(e)),
+                PartialError::Incomplete(e, l) => PartialError::Incomplete(f(e), l),
+                PartialError::Failure(e, l) => PartialError::Failure(f(e), l),
 
-                PartialError::Error(e) => PartialError::Error(e),
+                PartialError::Error(e, l) => PartialError::Error(e, l),
             })
         }
     }
@@ -80,9 +84,9 @@ pub trait PartialParser<Input, Output, Error = NotFound, Failure = Never> {
         move |input: &Input| match self.partial_parse(input) {
             Ok(PartialOk::Complete(o, remaining)) => Ok(PartialOk::Complete(o.into(), remaining)),
             Ok(PartialOk::Partial(o, remaining)) => Ok(PartialOk::Partial(o.into(), remaining)),
-            Err(PartialError::Incomplete(e)) => Err(PartialError::Incomplete(e.into())),
-            Err(PartialError::Error(e)) => Err(PartialError::Error(e.into())),
-            Err(PartialError::Failure(e)) => Err(PartialError::Failure(e.into())),
+            Err(PartialError::Incomplete(e, l)) => Err(PartialError::Incomplete(e.into(), l)),
+            Err(PartialError::Error(e, l)) => Err(PartialError::Error(e.into(), l)),
+            Err(PartialError::Failure(e, l)) => Err(PartialError::Failure(e.into(), l)),
         }
     }
     fn to_output<O: From<Output>>(self) -> impl PartialParser<Input, O, Error, Failure>
@@ -147,10 +151,10 @@ pub trait PartialParser<Input, Output, Error = NotFound, Failure = Never> {
     {
         move |input: &Input| {
             self.partial_parse(input).map_err(|e| match e {
-                PartialError::Error(e) => PartialError::Failure(e.into()),
+                PartialError::Error(e, l) => PartialError::Failure(e.into(), l),
 
-                PartialError::Incomplete(e) => PartialError::Incomplete(e),
-                PartialError::Failure(e) => PartialError::Failure(e),
+                PartialError::Incomplete(e, l) => PartialError::Incomplete(e, l),
+                PartialError::Failure(e, l) => PartialError::Failure(e, l),
             })
         }
     }
@@ -164,9 +168,9 @@ pub trait PartialParser<Input, Output, Error = NotFound, Failure = Never> {
     {
         move |input: &Input| {
             self.partial_parse(input).map_err(|e| match e {
-                PartialError::Error(e) => PartialError::Failure(err.clone()),
-                PartialError::Incomplete(e) => PartialError::Incomplete(e.into()),
-                PartialError::Failure(e) => PartialError::Failure(e.into()),
+                PartialError::Error(e, l) => PartialError::Failure(err.clone(), l),
+                PartialError::Incomplete(e, l) => PartialError::Incomplete(e.into(), l),
+                PartialError::Failure(e, l) => PartialError::Failure(e.into(), l),
             })
         }
     }
@@ -180,9 +184,9 @@ pub trait PartialParser<Input, Output, Error = NotFound, Failure = Never> {
     {
         move |input: &Input| {
             self.partial_parse(input).map_err(|e| match e {
-                PartialError::Error(e) => PartialError::Failure(f()),
-                PartialError::Failure(e) => PartialError::Failure(e.into()),
-                PartialError::Incomplete(e) => PartialError::Incomplete(e.into()),
+                PartialError::Error(e, l) => PartialError::Failure(f(), l),
+                PartialError::Failure(e, l) => PartialError::Failure(e.into(), l),
+                PartialError::Incomplete(e, l) => PartialError::Incomplete(e.into(), l),
             })
         }
     }
@@ -195,9 +199,9 @@ pub trait PartialParser<Input, Output, Error = NotFound, Failure = Never> {
     {
         move |input: &Input| {
             self.partial_parse(input).map_err(|e| match e {
-                PartialError::Incomplete(e) => PartialError::Error(e.into()),
-                PartialError::Failure(e) => PartialError::Error(e.into()),
-                PartialError::Error(e) => PartialError::Error(e),
+                PartialError::Incomplete(e, l) => PartialError::Error(e.into(), l),
+                PartialError::Failure(e, l) => PartialError::Error(e.into(), l),
+                PartialError::Error(e, l) => PartialError::Error(e, l),
             })
         }
     }
@@ -210,9 +214,9 @@ pub trait PartialParser<Input, Output, Error = NotFound, Failure = Never> {
         move |input: &Input| match self.partial_parse(input) {
             Ok(PartialOk::Complete(o, remaining)) => Ok(PartialOk::Complete(Some(o), remaining)),
             Ok(PartialOk::Partial(o, remaining)) => Ok(PartialOk::Partial(Some(o), remaining)),
-            Err(PartialError::Error(_)) => Ok(PartialOk::Complete(None, input.clone())),
-            Err(PartialError::Incomplete(e)) => Err(PartialError::Incomplete(e)),
-            Err(PartialError::Failure(e)) => Err(PartialError::Failure(e)),
+            Err(PartialError::Error(..)) => Ok(PartialOk::Complete(None, input.clone())),
+            Err(PartialError::Incomplete(e, l)) => Err(PartialError::Incomplete(e, l)),
+            Err(PartialError::Failure(e, l)) => Err(PartialError::Failure(e, l)),
         }
     }
     fn and<OtherOutput, Other: PartialParser<Input, OtherOutput, Error, Failure>>(
@@ -242,9 +246,12 @@ pub trait PartialParser<Input, Output, Error = NotFound, Failure = Never> {
     where
         Self: Sized,
         Failure: From<Missing>,
+        Output: crate::input::Input<Location = Input::Location>,
     {
         PartialPipeline::pipe((self, other))
     }
+
+    /// Identity function. A helper for certain macros.
     fn as_partial(self) -> impl PartialParser<Input, Output, Error, Failure>
     where
         Self: Sized,
@@ -253,8 +260,10 @@ pub trait PartialParser<Input, Output, Error = NotFound, Failure = Never> {
     }
 }
 
-pub type PartialResult<Input, Output, Error = NotFound, Failure = Never> =
-    Result<PartialOk<Input, Output>, PartialError<Error, Failure>>;
+pub type PartialResult<Input, Output, Error = NotFound, Failure = Never> = Result<
+    PartialOk<Input, Output>,
+    PartialError<Error, Failure, <Input as crate::input::Input>::Location>,
+>;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum PartialOk<Input, Output> {
@@ -282,28 +291,28 @@ impl<I, O: Fusable> Fusable for PartialOk<I, O> {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub enum PartialError<Error, Failure> {
-    Incomplete(Failure),
-    Error(Error),
-    Failure(Failure),
+pub enum PartialError<Error, Failure, Location> {
+    Incomplete(Failure, Location),
+    Error(Error, Location),
+    Failure(Failure, Location),
 }
 
-impl<E, F> From<ParserError<E, F>> for PartialError<E, F> {
-    fn from(value: ParserError<E, F>) -> Self {
+impl<E, F, L> From<ParserError<E, F, L>> for PartialError<E, F, L> {
+    fn from(value: ParserError<E, F, L>) -> Self {
         match value {
-            ParserError::Error(e) => PartialError::Error(e),
-            ParserError::Failure(e) => PartialError::Failure(e),
+            ParserError::Error(e, l) => PartialError::Error(e, l),
+            ParserError::Failure(e, l) => PartialError::Failure(e, l),
         }
     }
 }
-impl<E, F> TryFrom<PartialError<E, F>> for ParserError<E, F> {
+impl<E, F, L> TryFrom<PartialError<E, F, L>> for ParserError<E, F, L> {
     type Error = ErrorWasIncomplete;
 
-    fn try_from(value: PartialError<E, F>) -> Result<Self, ErrorWasIncomplete> {
+    fn try_from(value: PartialError<E, F, L>) -> Result<Self, ErrorWasIncomplete> {
         match value {
-            PartialError::Incomplete(_) => Err(ErrorWasIncomplete),
-            PartialError::Error(e) => Ok(ParserError::Error(e)),
-            PartialError::Failure(e) => Ok(ParserError::Failure(e)),
+            PartialError::Incomplete(..) => Err(ErrorWasIncomplete),
+            PartialError::Error(e, l) => Ok(ParserError::Error(e, l)),
+            PartialError::Failure(e, l) => Ok(ParserError::Failure(e, l)),
         }
     }
 }
@@ -323,7 +332,7 @@ impl fmt::Display for ErrorWasIncomplete {
 
 // Implements PartialParser for all functions with the correct signature.
 impl<
-        Input,
+        Input: crate::input::Input,
         Output,
         Error,
         Failure,

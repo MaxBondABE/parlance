@@ -11,34 +11,88 @@ use crate::{
     util::conditional_transforms::OkOrNotFound,
 };
 
+/// Parses a sign character (`+` or `-`).
+/// ```
+/// # use parlance::primitives::numbers::sign;
+/// # use parlance::parse::Parser;
+/// assert_eq!(sign.parse(&"+123"), Ok(("+", "123")));
+/// assert_eq!(sign.parse(&"-456"), Ok(("-", "456")));
+/// ```
 pub fn sign<I: Input>(s: &I) -> ParserResult<I, I> {
     ("+", "-").or().parse(s)
 }
 
+/// Parses one or more ASCII digits.
+/// ```
+/// # use parlance::primitives::numbers::digits;
+/// # use parlance::parse::Parser;
+/// assert_eq!(digits.parse(&"123abc"), Ok(("123", "abc")));
+/// ```
 pub fn digits<I: Input>(s: &I) -> ParserResult<I, I> {
-    s.take_while(|c| c.is_ascii_digit()).ok_or_not_found()
+    s.take_while(|c| c.is_ascii_digit())
+        .ok_or_not_found(s.location())
 }
 
+/// Parses digits with a decimal point (e.g., "123.456").
+/// ```
+/// # use parlance::primitives::numbers::digits_with_decimal;
+/// # use parlance::parse::Parser;
+/// assert_eq!(digits_with_decimal.parse(&"12.34"), Ok(("12.34", "")));
+/// ```
 pub fn digits_with_decimal<I: Input>(s: &I) -> ParserResult<I, I> {
     strfuse!((digits, ".", digits)).parse(s)
 }
 
+/// Parses a signed integer (with optional sign).
+/// ```
+/// # use parlance::primitives::numbers::signed_integer_number;
+/// # use parlance::parse::Parser;
+/// assert_eq!(signed_integer_number.parse(&"123"), Ok(("123", "")));
+/// assert_eq!(signed_integer_number.parse(&"-456"), Ok(("-456", "")));
+/// ```
 pub fn signed_integer_number<I: Input>(s: &I) -> ParserResult<I, I> {
     strfuse!((sign.opt(), digits)).parse(s)
 }
 
+/// Parses a positive integer (with optional `+` sign).
+/// ```
+/// # use parlance::primitives::numbers::positive_integer_number;
+/// # use parlance::parse::Parser;
+/// assert_eq!(positive_integer_number.parse(&"123"), Ok(("123", "")));
+/// assert_eq!(positive_integer_number.parse(&"+456"), Ok(("+456", "")));
+/// ```
 pub fn positive_integer_number<I: Input>(s: &I) -> ParserResult<I, I> {
     strfuse!(("+".opt(), digits)).parse(s)
 }
 
+/// Parses a negative integer (requires `-` sign).
+/// ```
+/// # use parlance::primitives::numbers::negative_integer_number;
+/// # use parlance::parse::Parser;
+/// assert_eq!(negative_integer_number.parse(&"-123"), Ok(("-123", "")));
+/// ```
 pub fn negative_integer_number<I: Input>(s: &I) -> ParserResult<I, I> {
     strfuse!(("-", digits)).parse(s)
 }
 
+/// Parses a decimal number with optional sign.
+/// ```
+/// # use parlance::primitives::numbers::number_with_decimal;
+/// # use parlance::parse::Parser;
+/// assert_eq!(number_with_decimal.parse(&"12.34"), Ok(("12.34", "")));
+/// assert_eq!(number_with_decimal.parse(&"-56.78"), Ok(("-56.78", "")));
+/// ```
 pub fn number_with_decimal<I: Input>(s: &I) -> ParserResult<I, I> {
     strfuse!((sign.opt(), digits_with_decimal)).parse(s)
 }
 
+/// Parses a number in scientific notation (e.g., "1.23e-4").
+/// ```
+/// # use parlance::primitives::numbers::scientific_number;
+/// # use parlance::parse::Parser;
+/// assert_eq!(scientific_number.parse(&"1.23e5"), Ok(("1.23e5", "")));
+/// assert_eq!(scientific_number.parse(&"-4E-2"), Ok(("-4E-2", "")));
+/// ```
 pub fn scientific_number<I: Input>(s: &I) -> ParserResult<I, I> {
     strfuse!((
         sign.opt(),
@@ -52,6 +106,14 @@ pub fn scientific_number<I: Input>(s: &I) -> ParserResult<I, I> {
     .parse(s)
 }
 
+/// Parses special floating-point values (infinity, NaN).
+/// ```
+/// # use parlance::primitives::numbers::special_number;
+/// # use parlance::parse::Parser;
+/// assert_eq!(special_number.parse(&"inf"), Ok(("inf", "")));
+/// assert_eq!(special_number.parse(&"NaN"), Ok(("NaN", "")));
+/// assert_eq!(special_number.parse(&"-infinity"), Ok(("-infinity", "")));
+/// ```
 pub fn special_number<I: Input>(s: &I) -> ParserResult<I, I> {
     (
         strfuse!((
@@ -95,41 +157,63 @@ impl<I: Input> NumberToken<I> {
     }
 }
 
+/// Parses a signed integer and converts it to the specified type.
+/// ```
+/// # use parlance::primitives::numbers::integer;
+/// # use parlance::parse::Parser;
+/// assert_eq!(integer::<_, i32>.parse(&"42"), Ok((42, "")));
+/// assert_eq!(integer::<_, i64>.parse(&"-123"), Ok((-123, "")));
+/// ```
 pub fn integer<I: Input, O: Integer>(s: &I) -> ParserResult<I, O, NotFound, <O as FromStr>::Err> {
     if let Ok((n, remaining)) = signed_integer_number.parse(s) {
         match O::from_str(n.as_str()) {
             Ok(output) => Ok((output, remaining)),
-            Err(e) => Err(ParserError::Failure(e)),
+            Err(e) => Err(ParserError::Failure(e, s.location())),
         }
     } else {
-        Err(ParserError::Error(NotFound))
+        Err(ParserError::Error(NotFound, s.location()))
     }
 }
 
+/// Parses an unsigned integer and converts it to the specified type.
+/// ```
+/// # use parlance::primitives::numbers::unsigned_integer;
+/// # use parlance::parse::Parser;
+/// assert_eq!(unsigned_integer::<_, u32>.parse(&"42"), Ok((42, "")));
+/// assert_eq!(unsigned_integer::<_, u64>.parse(&"+123"), Ok((123, "")));
+/// ```
 pub fn unsigned_integer<I: Input, O: UnsignedInteger>(
     s: &I,
 ) -> ParserResult<I, O, NotFound, <O as FromStr>::Err> {
     if let Ok((n, remaining)) = positive_integer_number.parse(s) {
         match O::from_str(n.as_str()) {
             Ok(output) => Ok((output, remaining)),
-            Err(e) => Err(ParserError::Failure(e)),
+            Err(e) => Err(ParserError::Failure(e, s.location())),
         }
     } else {
-        Err(ParserError::Error(NotFound))
+        Err(ParserError::Error(NotFound, s.location()))
     }
 }
 
+/// Parses a real number and converts it to the specified floating-point type.
+/// ```
+/// # use parlance::primitives::numbers::real;
+/// # use parlance::parse::Parser;
+/// assert_eq!(real::<_, f32>.parse(&"3.14"), Ok((3.14, "")));
+/// assert_eq!(real::<_, f64>.parse(&"1.23e-4"), Ok((1.23e-4, "")));
+/// ```
 pub fn real<I: Input, O: Real>(s: &I) -> ParserResult<I, O, NotFound, <O as FromStr>::Err> {
     if let Ok((n, remaining)) = NumberToken::parse(s) {
         match O::from_str(n.unwrap().as_str()) {
             Ok(output) => Ok((output, remaining)),
-            Err(e) => Err(ParserError::Failure(e)),
+            Err(e) => Err(ParserError::Failure(e, s.location())),
         }
     } else {
-        Err(ParserError::Error(NotFound))
+        Err(ParserError::Error(NotFound, s.location()))
     }
 }
 
+// TODO comment + doctest
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum Number {
     Unsigned(u32),
@@ -143,19 +227,19 @@ impl Number {
                 if n.as_str().starts_with("-") {
                     i32::from_str(n.as_str())
                         .map(|n| (n.into(), remaining))
-                        .map_err(|e| ParserError::Failure(e.into()))
+                        .map_err(|e| ParserError::Failure(e.into(), s.location()))
                 } else {
                     u32::from_str(n.as_str())
                         .map(|n| (n.into(), remaining))
-                        .map_err(|e| ParserError::Failure(e.into()))
+                        .map_err(|e| ParserError::Failure(e.into(), s.location()))
                 }
             }
             Ok((NumberToken::WithDecimal(n), remaining))
             | Ok((NumberToken::Scientific(n), remaining))
             | Ok((NumberToken::Special(n), remaining)) => f32::from_str(n.as_str())
                 .map(|n| (n.into(), remaining))
-                .map_err(|e| ParserError::Failure(e.into())),
-            Err(_) => Err(ParserError::Error(NotFound)),
+                .map_err(|e| ParserError::Failure(e.into(), s.location())),
+            Err(_) => Err(ParserError::Error(NotFound, s.location())),
         }
     }
 }
@@ -235,6 +319,7 @@ mod test {
     #[test]
     fn plain() {
         assert_eq!(signed_integer_number.parse(&"123"), Ok(("123", "")));
+        assert_eq!(signed_integer_number.parse(&"+123"), Ok(("+123", "")));
     }
 
     #[test]
@@ -254,8 +339,10 @@ mod test {
     #[test]
     fn one() {
         assert_eq!(Number::parse.parse(&"1"), Ok((Number::Unsigned(1), "")));
+        assert_eq!(Number::parse.parse(&"+1"), Ok((Number::Unsigned(1), "")));
         assert_eq!(Number::parse.parse(&"-1"), Ok((Number::Signed(-1), "")));
         assert_eq!(Number::parse.parse(&"1.0"), Ok((Number::Real(1.0), "")));
+        assert_eq!(Number::parse.parse(&"+1.0"), Ok((Number::Real(1.0), "")));
         assert_eq!(Number::parse.parse(&"-1.0"), Ok((Number::Real(-1.0), "")));
     }
 
@@ -263,6 +350,7 @@ mod test {
     fn zeroes() {
         assert_eq!(Number::parse.parse(&"0"), Ok((Number::Unsigned(0), "")));
         assert_eq!(Number::parse.parse(&"0.0"), Ok((Number::Real(0.0), "")));
+        assert_eq!(Number::parse.parse(&"+0.0"), Ok((Number::Real(0.0), "")));
         assert_eq!(Number::parse.parse(&"-0.0"), Ok((Number::Real(0.0), "")));
     }
 
@@ -306,17 +394,21 @@ mod test {
             Ok((Number::Real(f32::INFINITY), ""))
         );
         assert_eq!(
+            Number::parse.parse(&"infinity"),
+            Ok((Number::Real(f32::INFINITY), ""))
+        );
+        assert_eq!(
             Number::parse.parse(&"+inf"),
+            Ok((Number::Real(f32::INFINITY), ""))
+        );
+        assert_eq!(
+            Number::parse.parse(&"+infinity"),
             Ok((Number::Real(f32::INFINITY), ""))
         );
 
         assert_eq!(
             Number::parse.parse(&f32::NEG_INFINITY.to_string()),
             Ok((Number::Real(f32::NEG_INFINITY), "".to_string()))
-        );
-        assert_eq!(
-            Number::parse.parse(&"infinity"),
-            Ok((Number::Real(f32::INFINITY), ""))
         );
         assert_eq!(
             Number::parse.parse(&"-inf"),
@@ -354,6 +446,8 @@ mod property_tests {
             let s = format!("{:.4}", n);
             match Number::parse(&s) {
                 Ok((Number::Real(actual), _)) => assert!((n - actual).abs() < 0.1),
+                // Because we used 4 decimal points when we built the string, the absolute error should
+                // be less than 1 decimal point
                 Ok(x) => panic!("Wrong number kind {:?}", x),
                 Err(e) => panic!("Error: {:?}", e),
             };

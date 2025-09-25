@@ -3,8 +3,8 @@
 pub struct NotFound;
 
 impl From<Never> for NotFound {
-    fn from(value: Never) -> Self {
-        unreachable!()
+    fn from(_: Never) -> Self {
+        unreachable!("Never is never constructed.")
     }
 }
 impl From<Missing> for NotFound {
@@ -18,12 +18,12 @@ impl From<Missing> for NotFound {
 pub struct Missing;
 
 impl From<Never> for Missing {
-    fn from(value: Never) -> Self {
-        unreachable!()
+    fn from(_: Never) -> Self {
+        unreachable!("Never is never constructed.")
     }
 }
 impl From<NotFound> for Missing {
-    fn from(value: NotFound) -> Self {
+    fn from(_: NotFound) -> Self {
         Default::default()
     }
 }

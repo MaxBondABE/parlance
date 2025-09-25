@@ -8,10 +8,9 @@ mod fuse;
 mod partial;
 mod pipe;
 mod sequence;
-mod stream;
 
 pub use choice::{Choice, PartialChoice};
-pub use err::{Missing, Never, NotFound, FromNever};
+pub use err::{FromNever, Missing, Never, NotFound};
 pub use fuse::{Fusable, FuseSequence, PartialFuseSequence};
 pub use partial::{ErrorWasIncomplete, PartialError, PartialOk, PartialParser, PartialResult};
 pub use pipe::{PartialPipeline, Pipeline};
@@ -31,10 +30,10 @@ pub use parlance_macros::Parser;
 /// - `Choice`
 /// - `Pipeline`
 /// - `Fuse`
-pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
+pub trait Parser<Input: crate::input::Input, Output, Error = NotFound, Failure = Never> {
     /// Attempt to consume the provided input, returning the parsed token
     /// and the remaining input, or a `ParserError`.
-    fn parse(&self, input: &Input) -> ParserResult<Input, Output, Error, Failure>;
+    fn parse(&self, s: &Input) -> ParserResult<Input, Output, Error, Failure>;
     /// Map a function over the parser's output.
     fn map<O, Func: Fn(Output) -> O>(self, f: Func) -> impl Parser<Input, O, Error, Failure>
     where
@@ -46,7 +45,11 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
         }
     }
     /// Map a function over the parser's error cases.
-    fn map_err<E, F, Func: Fn(ParserError<Error, Failure>) -> ParserError<E, F>>(
+    fn map_err<
+        E,
+        F,
+        Func: Fn(ParserError<Error, Failure, Input::Location>) -> ParserError<E, F, Input::Location>,
+    >(
         self,
         f: Func,
     ) -> impl Parser<Input, Output, E, F>
@@ -63,10 +66,10 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
     where
         Self: Sized,
     {
-        move |input: &Input| {
-            self.parse(input).map_err(|e| match e {
-                ParserError::Error(e) => ParserError::Error(f(e)),
-                ParserError::Failure(e) => ParserError::Failure(e),
+        move |s: &Input| {
+            self.parse(s).map_err(|e| match e {
+                ParserError::Error(e, l) => ParserError::Error(f(e), l),
+                ParserError::Failure(e, l) => ParserError::Failure(e, l),
             })
         }
     }
@@ -80,8 +83,8 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
     {
         move |input: &Input| {
             self.parse(input).map_err(|e| match e {
-                ParserError::Failure(e) => ParserError::Failure(f(e)),
-                ParserError::Error(e) => ParserError::Error(e),
+                ParserError::Failure(e, l) => ParserError::Failure(f(e), l),
+                ParserError::Error(e, l) => ParserError::Error(e, l),
             })
         }
     }
@@ -92,8 +95,8 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
     {
         move |input: &Input| match self.parse(input) {
             Ok((o, remaining)) => Ok((o.into(), remaining)),
-            Err(ParserError::Error(e)) => Err(ParserError::Error(e.into())),
-            Err(ParserError::Failure(e)) => Err(ParserError::Failure(e.into())),
+            Err(ParserError::Error(e, l)) => Err(ParserError::Error(e.into(), l)),
+            Err(ParserError::Failure(e, l)) => Err(ParserError::Failure(e.into(), l)),
         }
     }
     /// Normalize the `Output` type of a parser using `From`.
@@ -163,8 +166,8 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
     {
         move |input: &Input| {
             self.parse(input).map_err(|e| match e {
-                ParserError::Error(e) => ParserError::Failure(e.into()),
-                ParserError::Failure(e) => ParserError::Failure(e),
+                ParserError::Error(e, l) => ParserError::Failure(e.into(), l),
+                ParserError::Failure(e, l) => ParserError::Failure(e, l),
             })
         }
     }
@@ -177,8 +180,8 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
     {
         move |input: &Input| {
             self.parse(input).map_err(|e| match e {
-                ParserError::Error(_) => ParserError::Failure(err.clone()),
-                ParserError::Failure(e) => ParserError::Failure(e.into()),
+                ParserError::Error(_, l) => ParserError::Failure(err.clone(), l),
+                ParserError::Failure(e, l) => ParserError::Failure(e.into(), l),
             })
         }
     }
@@ -191,8 +194,8 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
     {
         move |input: &Input| {
             self.parse(input).map_err(|e| match e {
-                ParserError::Error(e) => ParserError::Failure(f()),
-                ParserError::Failure(e) => ParserError::Failure(f()),
+                ParserError::Error(e, l) => ParserError::Failure(f(), l),
+                ParserError::Failure(e, l) => ParserError::Failure(f(), l),
             })
         }
     }
@@ -204,8 +207,8 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
     {
         move |input: &Input| {
             self.parse(input).map_err(|e| match e {
-                ParserError::Failure(e) => ParserError::Error(e.into()),
-                ParserError::Error(e) => ParserError::Error(e),
+                ParserError::Failure(e, l) => ParserError::Error(e.into(), l),
+                ParserError::Error(e, l) => ParserError::Error(e, l),
             })
         }
     }
@@ -225,8 +228,8 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
     {
         move |input: &Input| match self.parse(input) {
             Ok((x, remaining)) => Ok((Some(x), remaining)),
-            Err(ParserError::Error(_)) => Ok((None, input.clone())),
-            Err(ParserError::Failure(e)) => Err(ParserError::Failure(e)),
+            Err(ParserError::Error(..)) => Ok((None, input.clone())),
+            Err(ParserError::Failure(err, loc)) => Err(ParserError::Failure(err, loc)),
         }
     }
     /// Concatenate two parsers together using `Sequence`.
@@ -249,13 +252,14 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
     {
         (self, other).or()
     }
-    /// Apply the parser `other` to the output of this parser using `Pipe`.
+    /// Apply the parser `other` to the output of this parser using `Pipeline`.
     fn then<O, Other: Parser<Output, O, Error, Failure>>(
         self,
         other: Other,
     ) -> impl Parser<Input, O, Error, Failure>
     where
         Self: Sized,
+        Output: crate::input::Input<Location = Input::Location>,
     {
         Pipeline::pipe((self, other))
     }
@@ -263,29 +267,31 @@ pub trait Parser<Input, Output, Error = NotFound, Failure = Never> {
 
 /// The result of a parsing operation. A successful parsing operation consumes
 pub type ParserResult<Input, Output, Error = NotFound, Failure = Never> =
-    Result<(Output, Input), ParserError<Error, Failure>>;
+    Result<(Output, Input), ParserError<Error, Failure, <Input as crate::input::Input>::Location>>;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
-pub enum ParserError<Error, Failure> {
-    Error(Error),
-    Failure(Failure),
+pub enum ParserError<Error, Failure, Location> {
+    Error(Error, Location),
+    Failure(Failure, Location),
 }
-impl<E: fmt::Debug, F: fmt::Debug> fmt::Debug for ParserError<E, F> {
+impl<E: fmt::Debug, F: fmt::Debug, L: fmt::Debug> fmt::Debug for ParserError<E, F, L> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ParserError::Error(e) => {
-                f.write_fmt(format_args!("Parsing error: Normal error {:?}", e))
-            }
-            ParserError::Failure(e) => {
-                f.write_fmt(format_args!("Parsing error: Permanent failure {:?}", e))
-            }
+            ParserError::Error(err, loc) => f.write_fmt(format_args!(
+                "Parsing error: Normal error at {:?}:\n\t{:?}",
+                loc, err
+            )),
+            ParserError::Failure(err, loc) => f.write_fmt(format_args!(
+                "Parsing error: Permanent failure at {:?}:\n\t{:?}",
+                loc, err
+            )),
         }
     }
 }
 
 // Implements `Parser` for all functions with the correct signature.
 impl<
-        Input,
+        Input: crate::input::Input,
         Output,
         Error,
         Failure,

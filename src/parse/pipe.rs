@@ -3,7 +3,7 @@ use crate::util::conditional_transforms::NoPartial;
 
 /// Enables chaining a tuple of parsers into a single parser that applies each parser in sequence,
 /// passing each output as the input to the next.
-pub trait Pipeline<T, Input, Output, Error = NotFound, Failure = Never> {
+pub trait Pipeline<T, Input: crate::input::Input, Output, Error = NotFound, Failure = Never> {
     fn pipe(self) -> impl Parser<Input, Output, Error, Failure>
     where
         Self: Sized;
@@ -11,7 +11,8 @@ pub trait Pipeline<T, Input, Output, Error = NotFound, Failure = Never> {
 
 /// Enables chaining a tuple of parsers into a single parser that applies each parser in sequence,
 /// passing each output as the input to the next.
-pub trait PartialPipeline<T, Input, Output, Error = NotFound, Failure = Never> {
+pub trait PartialPipeline<T, Input: crate::input::Input, Output, Error = NotFound, Failure = Never>
+{
     fn pipe(self) -> impl PartialParser<Input, Output, Error, Failure>
     where
         Self: Sized;
@@ -21,14 +22,14 @@ macro_rules! pipeline_impl (
     ($first: literal $(($prev: literal $idx: literal))* . ($last_prev: literal $last: literal)) => {
         paste::paste! {
             impl<
-                Input,
+                Input: crate::input::Input,
                 Error,
                 Failure,
                 Output,
-                [<Output $first>],
+                [<Output $first>]: crate::input::Input<Location = Input::Location>,
                 [<P $first>]: Parser<Input, [<Output $first>], Error, Failure>,
                 $(
-                    [<Output $idx>],
+                    [<Output $idx>]: crate::input::Input<Location = Input::Location>,
                     [<P $idx>]: Parser<[<Output $prev>], [<Output $idx>], Error, Failure>,
                 )*
                 [<P $last>]: Parser<[<Output $last_prev>], Output, Error, Failure>,
@@ -48,14 +49,14 @@ macro_rules! pipeline_impl (
             }
 
             impl<
-                Input,
+                Input: crate::input::Input,
                 Error,
                 Failure: From<Missing>,
                 Output,
-                [<Output $first>],
+                [<Output $first>]: crate::input::Input<Location = Input::Location>,
                 [<P $first>]: PartialParser<Input, [<Output $first>], Error, Failure>,
                 $(
-                    [<Output $idx>],
+                    [<Output $idx>]: crate::input::Input<Location = Input::Location>,
                     [<P $idx>]: PartialParser<[<Output $prev>], [<Output $idx>], Error, Failure>,
                 )*
                 [<P $last>]: PartialParser<[<Output $last_prev>], Output, Error, Failure>,

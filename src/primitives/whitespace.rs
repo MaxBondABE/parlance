@@ -7,10 +7,25 @@ use crate::{
     },
 };
 
+/// Parses one or more whitespace characters.
+/// ```
+/// # use parlance::primitives::whitespace::whitespace;
+/// # use parlance::parse::Parser;
+/// assert_eq!(whitespace.parse(&"   hello"), Ok(("   ", "hello")));
+/// assert_eq!(whitespace.parse(&"\t\n world"), Ok(("\t\n ", "world")));
+/// ```
 pub fn whitespace<I: Input>(s: &I) -> ParserResult<I, I> {
-    s.take_while(|c| c.is_whitespace()).ok_or_not_found()
+    s.take_while(|c| c.is_whitespace())
+        .ok_or_not_found(s.location())
 }
 
+/// Parses whitespace with partial parsing support for streaming input.
+/// ```
+/// # use parlance::primitives::whitespace::partial_whitespace;
+/// # use parlance::parse::PartialParser;
+/// # use parlance::parse::{PartialOk, PartialResult};
+/// # assert_eq!(partial_whitespace.partial_parse(&"   hello"), Ok(PartialOk::Complete("   ", "hello")));
+/// ```
 pub fn partial_whitespace<I: Input>(s: &I) -> PartialResult<I, I> {
     whitespace.parse(s).has_stopped()
 }

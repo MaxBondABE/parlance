@@ -5,10 +5,10 @@ use crate::parse::{Parser, ParserError, ParserResult, PartialOk, PartialParser, 
 
 /// Converts a `Parser` into a `PartialParser`.
 /// On success, the resulting parser always returns `PartialOk::Complete`.
-pub trait AsPartialParser<Input, Output, Error, Failure> {
+pub trait AsPartialParser<Input: crate::input::Input, Output, Error, Failure> {
     fn as_partial(self) -> impl PartialParser<Input, Output, Error, Failure>;
 }
-impl<I, O, E, F, T: Parser<I, O, E, F>> AsPartialParser<I, O, E, F> for T {
+impl<I: crate::input::Input, O, E, F, T: Parser<I, O, E, F>> AsPartialParser<I, O, E, F> for T {
     fn as_partial(self) -> impl PartialParser<I, O, E, F> {
         move |input: &I| match self.parse(input) {
             Ok((o, r)) => Ok(PartialOk::Complete(o, r)),
@@ -37,6 +37,8 @@ macro_rules! as_partial (
         )
     };
 );
+
+pub use crate::as_partial;
 
 #[cfg(test)]
 mod test {

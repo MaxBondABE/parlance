@@ -7,8 +7,14 @@ use crate::{
 };
 
 /// Parses input surrounded by the same parser (bread) before and after a content parser, returning only the content result.
+/// ```
+/// # use parlance::combinators::sandwich::sandwich;
+/// # use parlance::parse::Parser;
+/// let parser = sandwich("\"", "content");
+/// assert_eq!(parser.parse(&"\"content\""), Ok(("content", "")));
+/// ```
 pub fn sandwich<
-    I,
+    I: Input,
     BreadOutput,
     ContentOutput,
     E,
@@ -30,8 +36,14 @@ pub fn sandwich<
 }
 
 /// Parses input between a start and an end parser, returning only the content result.
+/// ```
+/// # use parlance::combinators::sandwich::between;
+/// # use parlance::parse::Parser;
+/// let parser = between("[", "data", "]");
+/// assert_eq!(parser.parse(&"[data]"), Ok(("data", "")));
+/// ```
 pub fn between<
-    I,
+    I: Input,
     StartOutput,
     ContentOutput,
     EndOutput,
@@ -53,8 +65,14 @@ pub fn between<
 }
 
 /// Parses a key, delimiter, and value in sequence, returning the key and value as a tuple.
+/// ```
+/// # use parlance::combinators::sandwich::key_value;
+/// # use parlance::parse::Parser;
+/// let parser = key_value("name", "=", "value");
+/// assert_eq!(parser.parse(&"name=value"), Ok((("name", "value"), "")));
+/// ```
 pub fn key_value<
-    I,
+    I: Input,
     KeyOutput,
     DelimiterOutput,
     ValueOutput,
@@ -76,6 +94,12 @@ pub fn key_value<
 }
 
 /// Parses a key-value pair separated by a colon (:), returning the key and value as a tuple.
+/// ```
+/// # use parlance::combinators::sandwich::header;
+/// # use parlance::parse::Parser;
+/// let parser = header("Content-Type", "application/json");
+/// assert_eq!(parser.parse(&"Content-Type:application/json"), Ok((("Content-Type", "application/json"), "")));
+/// ```
 pub fn header<
     I: Input,
     KeyOutput,

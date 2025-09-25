@@ -3,7 +3,6 @@ pub mod fuse;
 pub mod many;
 pub mod sandwich;
 pub mod seek;
-pub mod repeat;
 
 pub use crate::strfuse;
 pub use escaped::*;

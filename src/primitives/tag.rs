@@ -13,13 +13,24 @@ use crate::{
 };
 
 /// Case-sensitive tag.
+/// ```
+/// # use parlance::primitives::tag::tag;
+/// # use parlance::parse::Parser;
+/// assert_eq!(tag("foo").parse(&"foobar"), Ok(("foo", "bar")));
+/// ```
 pub fn tag<T: AsRef<str>, I: Input>(s: T) -> impl Parser<I, I> {
-    move |input: &I| input.pop(&s).ok_or_not_found()
+    move |input: &I| input.pop(&s).ok_or_not_found(input.location())
 }
 
 /// Case-insensitive tag.
+/// ```
+/// # use parlance::primitives::tag::tag_no_case;
+/// # use parlance::parse::Parser;
+/// assert_eq!(tag_no_case("foo").parse(&"foobar"), Ok(("foo", "bar")));
+/// assert_eq!(tag_no_case("foo").parse(&"FOObar"), Ok(("FOO", "bar")));
+/// ```
 pub fn tag_no_case<T: AsRef<str>, I: Input>(s: T) -> impl Parser<I, I> {
-    move |input: &I| input.pop_no_case(&s).ok_or_not_found()
+    move |input: &I| input.pop_no_case(&s).ok_or_not_found(input.location())
 }
 
 /// Tag with case sensitivity determined by the `case_sensitive_tags` and `case_insensitive_tags`
@@ -55,8 +66,8 @@ mod string_literals {
     //! lead to poor DX if you have both traits in scope. The compiler can't tell
     //! which trait you're referring to, and you have to use qualified paths.
     //!
-    //! Since both traits are in the prelude, we can't to this by default. Thus,
-    //! these feature gate.
+    //! Since both traits are in the prelude, we can't do this by default. Thus,
+    //! these feature gates.
     //! NB: `complete_tags` and `partial_tags` are NOT mutually exclusive.
     //!     `complete_tags` is the default.
 
@@ -101,7 +112,7 @@ mod test {
         assert_eq!(tag::<_, _>("foo").parse(&"foobar"), Ok(("foo", "bar")));
         assert_eq!(
             tag::<_, _>("foo").parse(&"Foobar"),
-            Err(ParserError::Error(NotFound))
+            Err(ParserError::Error(NotFound, ()))
         );
     }
 
@@ -135,8 +146,8 @@ mod test {
         ))]
         {
             assert_eq!(parse(&"foo"), Ok(("foo", "")));
-            assert_eq!(parse(&"FOO"), Err(ParserError::Error(NotFound)));
-            assert_eq!(parse(&"bar"), Err(ParserError::Error(NotFound)));
+            assert_eq!(parse(&"FOO"), Err(ParserError::Error(NotFound, ())));
+            assert_eq!(parse(&"bar"), Err(ParserError::Error(NotFound, ())));
         }
 
         #[cfg(feature = "case_insensitive_tags")]

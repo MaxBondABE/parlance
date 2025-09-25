@@ -1,43 +1,41 @@
-use crate::{
-    input::Input,
-    parse::{
-        Missing, Never, NotFound, Parser, ParserError, ParserResult, PartialError, PartialOk, PartialResult
-    },
+use crate::parse::{
+    Missing, Never, NotFound, Parser, ParserError, ParserResult, PartialError, PartialOk,
+    PartialResult,
 };
 
-pub trait OkOrNotFound<I, O> {
-    fn ok_or_not_found(self) -> ParserResult<I, O>;
+pub trait OkOrNotFound<Input: crate::input::Input, Output> {
+    fn ok_or_not_found(self, location: Input::Location) -> ParserResult<Input, Output>;
 }
-impl<I, O> OkOrNotFound<I, O> for Option<(O, I)> {
-    fn ok_or_not_found(self) -> ParserResult<I, O> {
-        self.ok_or(ParserError::Error(NotFound))
+impl<I: crate::input::Input, O> OkOrNotFound<I, O> for Option<(O, I)> {
+    fn ok_or_not_found(self, location: I::Location) -> ParserResult<I, O> {
+        self.ok_or(ParserError::Error(NotFound, location))
     }
 }
 
-pub trait OkOrFail<I, O, F> {
-    fn ok_or_fail(self) -> ParserResult<I, O, Never, F>;
+pub trait OkOrFail<Input: crate::input::Input, Output, Failure> {
+    fn ok_or_fail(self, location: Input::Location) -> ParserResult<Input, Output, Never, Failure>;
 }
-impl<I, O, F: Default> OkOrFail<I, O, F> for Option<(O, I)> {
-    fn ok_or_fail(self) -> ParserResult<I, O, Never, F> {
-        self.ok_or_else(|| ParserError::Failure(Default::default()))
+impl<I: crate::input::Input, O, F: Default> OkOrFail<I, O, F> for Option<(O, I)> {
+    fn ok_or_fail(self, location: I::Location) -> ParserResult<I, O, Never, F> {
+        self.ok_or_else(|| ParserError::Failure(Default::default(), location))
     }
 }
 
-pub trait PartialOkOrNotFound<I, O> {
-    fn ok_or_not_found(self) -> PartialResult<I, O>;
+pub trait PartialOkOrNotFound<I: crate::input::Input, O> {
+    fn ok_or_not_found(self, location: I::Location) -> PartialResult<I, O>;
 }
-impl<I, O> PartialOkOrNotFound<I, O> for Option<PartialOk<I, O>> {
-    fn ok_or_not_found(self) -> PartialResult<I, O> {
-        self.ok_or(PartialError::Error(NotFound))
+impl<I: crate::input::Input, O> PartialOkOrNotFound<I, O> for Option<PartialOk<I, O>> {
+    fn ok_or_not_found(self, location: I::Location) -> PartialResult<I, O> {
+        self.ok_or(PartialError::Error(NotFound, location))
     }
 }
 
-pub trait OkOrIncomplete<I, O> {
-    fn ok_or_incomplete(self) -> PartialResult<I, O, Never, Missing>;
+pub trait OkOrIncomplete<I: crate::input::Input, O> {
+    fn ok_or_incomplete(self, location: I::Location) -> PartialResult<I, O, Never, Missing>;
 }
-impl<I, O> OkOrIncomplete<I, O> for Option<PartialOk<I, O>> {
-    fn ok_or_incomplete(self) -> PartialResult<I, O, Never, Missing> {
-        self.ok_or(PartialError::Incomplete(Missing))
+impl<I: crate::input::Input, O> OkOrIncomplete<I, O> for Option<PartialOk<I, O>> {
+    fn ok_or_incomplete(self, location: I::Location) -> PartialResult<I, O, Never, Missing> {
+        self.ok_or(PartialError::Incomplete(Missing, location))
     }
 }
 
@@ -58,7 +56,7 @@ pub trait CompleteIf<I, O> {
     fn has_stopped(self) -> PartialOk<I, O>
     where
         Self: Sized,
-        I: Input,
+        I: crate::input::Input,
     {
         self.as_complete_if(|_, remaining| !remaining.is_empty())
     }
@@ -98,7 +96,7 @@ pub trait MaybeCompleteIf<I, O> {
     fn has_stopped(self) -> Option<PartialOk<I, O>>
     where
         Self: Sized,
-        I: Input,
+        I: crate::input::Input,
     {
         self.as_complete_if(|_, remaining| !remaining.is_empty())
     }
@@ -109,7 +107,7 @@ impl<I, O> MaybeCompleteIf<I, O> for Option<(O, I)> {
     }
 }
 
-pub trait EitherCompleteIf<I, O, E, F> {
+pub trait EitherCompleteIf<I: crate::input::Input, O, E, F> {
     fn as_complete_if<Func: Fn(&O, &I) -> bool>(self, f: Func) -> PartialResult<I, O, E, F>;
     fn as_complete(self) -> PartialResult<I, O, E, F>
     where
@@ -126,30 +124,45 @@ pub trait EitherCompleteIf<I, O, E, F> {
     fn has_stopped(self) -> PartialResult<I, O, E, F>
     where
         Self: Sized,
-        I: Input,
+        I: crate::input::Input,
     {
         self.as_complete_if(|_, remaining| !remaining.is_empty())
     }
 }
-impl<I, O, E, F> EitherCompleteIf<I, O, E, F> for ParserResult<I, O, E, F> {
+impl<I: crate::input::Input, O, E, F> EitherCompleteIf<I, O, E, F> for ParserResult<I, O, E, F> {
     fn as_complete_if<Func: Fn(&O, &I) -> bool>(self, f: Func) -> PartialResult<I, O, E, F> {
         self.map(|x| x.as_complete_if(f)).map_err(Into::into)
     }
 }
-impl<I, O, E, F> EitherCompleteIf<I, O, E, F> for PartialResult<I, O, E, F> {
+impl<I: crate::input::Input, O, E, F> EitherCompleteIf<I, O, E, F> for PartialResult<I, O, E, F> {
     fn as_complete_if<Func: Fn(&O, &I) -> bool>(self, f: Func) -> PartialResult<I, O, E, F> {
         self.map(|x| x.as_complete_if(f))
     }
 }
 
-pub trait NoPartial<Input, Output, Error, Failure> {
+pub trait NoPartial<Input: crate::input::Input, Output, Error, Failure> {
     fn no_partial(self) -> PartialResult<Input, Output, Error, Failure>;
+    fn no_partial_at(
+        self,
+        location: Input::Location,
+    ) -> PartialResult<Input, Output, Error, Failure>;
 }
-impl<I, O, E, F: From<Missing>> NoPartial<I, O, E, F> for PartialResult<I, O, E, F> {
+impl<I: crate::input::Input, O, E, F: From<Missing>> NoPartial<I, O, E, F>
+    for PartialResult<I, O, E, F>
+{
     fn no_partial(self) -> PartialResult<I, O, E, F> {
         match self {
             Ok(PartialOk::Complete(o, r)) => Ok(PartialOk::Complete(o, r)),
-            Ok(PartialOk::Partial(o, r)) => Err(PartialError::Failure(Missing.into())),
+            Ok(PartialOk::Partial(o, r)) => {
+                Err(PartialError::Failure(Missing.into(), r.location()))
+            }
+            Err(e) => Err(e),
+        }
+    }
+    fn no_partial_at(self, location: I::Location) -> PartialResult<I, O, E, F> {
+        match self {
+            Ok(PartialOk::Complete(o, r)) => Ok(PartialOk::Complete(o, r)),
+            Ok(PartialOk::Partial(o, r)) => Err(PartialError::Failure(Missing.into(), location)),
             Err(e) => Err(e),
         }
     }

@@ -3,12 +3,12 @@ use crate::util::tuples::implement_for_tuples;
 use super::{Never, NotFound, Parser, ParserError, PartialError, PartialParser};
 
 /// A tuple of parsers. Returns the first to succeed.
-pub trait Choice<Input, Output, Error = NotFound, Failure = Never> {
+pub trait Choice<Input: crate::input::Input, Output, Error = NotFound, Failure = Never> {
     fn or(self) -> impl Parser<Input, Output, NotFound, Failure>;
 }
 
 /// A tuple of partial parsers. Returns the first to succeed.
-pub trait PartialChoice<Input, Output, Error = NotFound, Failure = Never> {
+pub trait PartialChoice<Input: crate::input::Input, Output, Error = NotFound, Failure = Never> {
     fn or(self) -> impl PartialParser<Input, Output, NotFound, Failure>;
 }
 
@@ -16,7 +16,7 @@ macro_rules! choice_impl (
     ($($idx: literal)* . $last: literal) => {
         paste::paste! {
             impl<
-                Input,
+                Input: crate::input::Input,
                 Output,
                 Error,
                 Failure,
@@ -29,22 +29,22 @@ macro_rules! choice_impl (
                         $(
                             match self.$idx.parse(input) {
                                 Ok(x) => return Ok(x),
-                                Err(ParserError::Error(_)) => (),
-                                Err(ParserError::Failure(e)) => return Err(ParserError::Failure(e)),
+                                Err(ParserError::Error(..)) => (),
+                                Err(ParserError::Failure(e, loc)) => return Err(ParserError::Failure(e, loc)),
                             }
                         )*
 
                         match self.$last.parse(input) {
                             Ok(x) => Ok(x),
-                            Err(ParserError::Error(_)) => Err(ParserError::Error(NotFound)),
-                            Err(ParserError::Failure(e)) => Err(ParserError::Failure(e)),
+                            Err(ParserError::Error(..)) => Err(ParserError::Error(NotFound, input.location())),
+                            Err(ParserError::Failure(e, loc)) => Err(ParserError::Failure(e, loc)),
                         }
                     }
                 }
             }
 
             impl<
-                Input,
+                Input: crate::input::Input,
                 Output,
                 Error,
                 Failure,
@@ -57,17 +57,17 @@ macro_rules! choice_impl (
                         $(
                             match self.$idx.partial_parse(input) {
                                 Ok(x) => return Ok(x),
-                                Err(PartialError::Error(_)) => (),
-                                Err(PartialError::Incomplete(e)) => return Err(PartialError::Incomplete(e)),
-                                Err(PartialError::Failure(e)) => return Err(PartialError::Failure(e)),
+                                Err(PartialError::Error(..)) => (),
+                                Err(PartialError::Incomplete(e, loc)) => return Err(PartialError::Incomplete(e, loc)),
+                                Err(PartialError::Failure(e, loc)) => return Err(PartialError::Failure(e, loc)),
                             }
                         )*
 
                         match self.$last.partial_parse(input) {
                             Ok(x) => Ok(x),
-                            Err(PartialError::Error(_)) => Err(PartialError::Error(NotFound)),
-                            Err(PartialError::Incomplete(e)) => return Err(PartialError::Incomplete(e)),
-                            Err(PartialError::Failure(e)) => Err(PartialError::Failure(e)),
+                            Err(PartialError::Error(..)) => Err(PartialError::Error(NotFound, input.location())),
+                            Err(PartialError::Incomplete(e, loc)) => return Err(PartialError::Incomplete(e, loc)),
+                            Err(PartialError::Failure(e, loc)) => Err(PartialError::Failure(e, loc)),
                         }
                     }
                 }
@@ -111,7 +111,7 @@ mod test {
         }
 
         fn always_not_found<I: Input>(s: &I) -> ParserResult<I, ()> {
-            Err(ParserError::Error(NotFound))
+            Err(ParserError::Error(NotFound, s.location()))
         }
 
         assert_eq!(
@@ -126,14 +126,14 @@ mod test {
         assert_eq!(("foo", "bar").or().parse(&"bar"), Ok(("bar", "")));
         assert_eq!(
             ("foo", "bar").or().parse(&"not_there"),
-            Err(ParserError::Error(NotFound))
+            Err(ParserError::Error(NotFound, ()))
         );
 
         assert_eq!(("bar", "foo").or().parse(&"foo"), Ok(("foo", "")));
         assert_eq!(("bar", "foo").or().parse(&"bar"), Ok(("bar", "")));
         assert_eq!(
             ("bar", "foo").or().parse(&"not_there"),
-            Err(ParserError::Error(NotFound))
+            Err(ParserError::Error(NotFound, ()))
         );
     }
 }

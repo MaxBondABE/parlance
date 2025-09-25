@@ -1,3 +1,11 @@
+/// Fuses a sequence of parsers into a single parser that returns the consumed input.
+/// Calculates the total length consumed by the sequence and returns that portion of input.
+/// ```
+/// # use parlance::strfuse;
+/// # use parlance::parse::Parser;
+/// let parser = strfuse!(("hello", " ", "world"));
+/// assert_eq!(parser.parse(&"hello world!"), Ok(("hello world", "!")));
+/// ```
 #[macro_export]
 macro_rules! strfuse (
     ($x: expr) => {
@@ -8,7 +16,7 @@ macro_rules! strfuse (
                     if let Ok((len, _)) = $x.output_len().parse(&s.as_str()) {
                         Ok(s.split_at(len))
                     } else {
-                        Err($crate::parse::ParserError::Error($crate::parse::NotFound))
+                        Err($crate::parse::ParserError::Error($crate::parse::NotFound, s.location()))
                     }
                 }
 

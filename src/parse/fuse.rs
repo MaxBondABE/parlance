@@ -2,7 +2,7 @@ use crate::{input::Input, util::tuples::implement_for_tuples};
 
 use super::{Parser, PartialOk, PartialParser, PartialSequence, Sequence};
 
-pub trait FuseSequence<Input, Output, Error, Failure> {
+pub trait FuseSequence<Input: crate::input::Input, Output, Error, Failure> {
     fn output_len(self) -> impl Parser<Input, usize, Error, Failure>;
     fn fuse(self) -> impl Parser<Input, Input, Error, Failure>;
 }
@@ -20,7 +20,7 @@ impl<I: Input, O: Fusable, E, F, T: Sequence<I, O, E, F>> FuseSequence<I, O, E, 
     }
 }
 
-pub trait PartialFuseSequence<Input, Output, Error, Failure> {
+pub trait PartialFuseSequence<Input: crate::input::Input, Output, Error, Failure> {
     fn output_len(self) -> impl PartialParser<Input, usize, Error, Failure>;
     fn fuse(self) -> impl PartialParser<Input, Input, Error, Failure>;
 }

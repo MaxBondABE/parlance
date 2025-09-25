@@ -9,7 +9,7 @@ use super::{Fusable, Missing, Never, NotFound, Parser, PartialError, PartialOk, 
 
 /// A set of parsers which consume the input in series, failing if any
 /// one of them returns an error.
-pub trait Sequence<Input, Output, Error = NotFound, Failure = Never> {
+pub trait Sequence<Input: crate::input::Input, Output, Error = NotFound, Failure = Never> {
     fn and(self) -> impl Parser<Input, Output, Error, Failure>;
     fn with_sep<O, P>(self, sep: P) -> SeparatedSequence<Self, impl Parser<Input, ()>>
     where
@@ -33,7 +33,7 @@ pub trait Sequence<Input, Output, Error = NotFound, Failure = Never> {
 
 /// A set of partial parsers which consume the input in series, failing if any
 /// one of them returns an error.
-pub trait PartialSequence<Input, Output, Error = NotFound, Failure = Never> {
+pub trait PartialSequence<Input: crate::input::Input, Output, Error = NotFound, Failure = Never> {
     fn and(self) -> impl PartialParser<Input, Output, Error, Failure>;
     fn with_sep<O, P>(self, sep: P) -> SeparatedSequence<Self, impl PartialParser<Input, ()>>
     where
@@ -105,7 +105,7 @@ macro_rules! sequence_impl (
     ($first: literal $($mid: literal)* . $last: literal) => {
         paste::paste! {
             impl<
-                Input,
+                Input: crate::input::Input,
                 Error,
                 Failure,
                 [<Output $first>],
@@ -141,7 +141,7 @@ macro_rules! sequence_impl (
             }
 
             impl<
-                Input,
+                Input: crate::input::Input,
                 Error,
                 Failure,
                 Sep: Parser<Input, (), Error, Failure>,
@@ -180,7 +180,7 @@ macro_rules! sequence_impl (
             }
 
             impl<
-                Input,
+                Input: crate::input::Input,
                 Error,
                 Failure,
                 Sep: Parser<Input, (), Error, Failure>,
@@ -228,7 +228,7 @@ macro_rules! sequence_impl (
             }
 
             impl<
-                Input,
+                Input: crate::input::Input,
                 Error,
                 Failure: From<Missing>,
                 [<Output $first>],
@@ -270,7 +270,7 @@ macro_rules! sequence_impl (
             }
 
             impl<
-                Input,
+                Input: crate::input::Input,
                 Error,
                 Failure: From<Missing>,
                 Sep: PartialParser<Input, (), Error, Failure>,
@@ -319,7 +319,7 @@ macro_rules! sequence_impl (
             }
 
             impl<
-                Input,
+                Input: crate::input::Input,
                 Error,
                 Failure: From<Missing>,
                 Sep: PartialParser<Input, (), Error, Failure>,
@@ -395,20 +395,23 @@ mod test {
         let parser = ("foo", "bar").and();
         assert_eq!(parser.parse(&"foobar"), Ok((("foo", "bar"), "")));
         assert_eq!(parser.parse(&"foobar123"), Ok((("foo", "bar"), "123")));
-        assert_eq!(parser.parse(&"foo"), Err(ParserError::Error(NotFound)));
-        assert_eq!(parser.parse(&"bar"), Err(ParserError::Error(NotFound)));
+        assert_eq!(parser.parse(&"foo"), Err(ParserError::Error(NotFound, ())));
+        assert_eq!(parser.parse(&"bar"), Err(ParserError::Error(NotFound, ())));
     }
 
     #[test]
     fn separated_always() {
         let parser = ("foo", "bar").with_sep("x").and();
-        assert_eq!(parser.parse(&"foobar"), Err(ParserError::Error(NotFound)));
+        assert_eq!(
+            parser.parse(&"foobar"),
+            Err(ParserError::Error(NotFound, ()))
+        );
         assert_eq!(parser.parse(&"fooxbar"), Ok((("foo", "bar"), "")));
         assert_eq!(parser.parse(&"fooxbarx"), Ok((("foo", "bar"), "x")));
         assert_eq!(parser.parse(&"fooxbar123"), Ok((("foo", "bar"), "123")));
 
-        assert_eq!(parser.parse(&"foo"), Err(ParserError::Error(NotFound)));
-        assert_eq!(parser.parse(&"bar"), Err(ParserError::Error(NotFound)));
+        assert_eq!(parser.parse(&"foo"), Err(ParserError::Error(NotFound, ())));
+        assert_eq!(parser.parse(&"bar"), Err(ParserError::Error(NotFound, ())));
     }
 
     #[test]
@@ -427,14 +430,17 @@ mod test {
     #[test]
     fn whitespace() {
         let parser = ("foo", "bar").whitespace().and();
-        assert_eq!(parser.parse(&"foobar"), Err(ParserError::Error(NotFound)));
+        assert_eq!(
+            parser.parse(&"foobar"),
+            Err(ParserError::Error(NotFound, ()))
+        );
         for s in ["foo bar", "foo    bar", "foo\nbar", "foo\tbar"] {
             assert_eq!(parser.parse(&s), Ok((("foo", "bar"), "")));
         }
         assert_eq!(parser.parse(&"foo bar\t"), Ok((("foo", "bar"), "\t")));
 
-        assert_eq!(parser.parse(&"foo"), Err(ParserError::Error(NotFound)));
-        assert_eq!(parser.parse(&"bar"), Err(ParserError::Error(NotFound)));
+        assert_eq!(parser.parse(&"foo"), Err(ParserError::Error(NotFound, ())));
+        assert_eq!(parser.parse(&"bar"), Err(ParserError::Error(NotFound, ())));
     }
 
     #[test]
@@ -442,7 +448,7 @@ mod test {
         let parser = ("foo", "bar".opt(), "baz").whitespace().and();
         assert_eq!(
             parser.parse(&"foobarbaz"),
-            Err(ParserError::Error(NotFound))
+            Err(ParserError::Error(NotFound, ()))
         );
         for s in [
             "foo bar baz",
@@ -464,8 +470,8 @@ mod test {
             Ok((("foo", Some("bar"), "baz"), "\t"))
         );
 
-        assert_eq!(parser.parse(&"foo"), Err(ParserError::Error(NotFound)));
-        assert_eq!(parser.parse(&"bar"), Err(ParserError::Error(NotFound)));
+        assert_eq!(parser.parse(&"foo"), Err(ParserError::Error(NotFound, ())));
+        assert_eq!(parser.parse(&"bar"), Err(ParserError::Error(NotFound, ())));
     }
 
     #[test]
@@ -485,11 +491,11 @@ mod test {
         );
         assert_eq!(
             parser.partial_parse(&"foo"),
-            Err(PartialError::Error(NotFound))
+            Err(PartialError::Error(NotFound, ()))
         );
         assert_eq!(
             parser.partial_parse(&"bar"),
-            Err(PartialError::Error(NotFound))
+            Err(PartialError::Error(NotFound, ()))
         );
     }
 

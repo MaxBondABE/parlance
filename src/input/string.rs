@@ -8,8 +8,13 @@ pub struct SharedString {
     range: Range<usize>,
 }
 impl Input for SharedString {
+    type Location = Range<usize>;
+
     fn as_str(&self) -> &str {
         self.as_ref()
+    }
+    fn location(&self) -> Self::Location {
+        self.range.clone()
     }
     fn len(&self) -> usize {
         self.range.len()
@@ -33,7 +38,7 @@ impl Input for SharedString {
         Self: Sized,
     {
         let idx = self.range.start + mid;
-        assert!(idx < self.range.end);
+        assert!(idx <= self.range.end);
 
         (
             Self {
@@ -50,16 +55,16 @@ impl Input for SharedString {
     where
         Self: Sized,
     {
-        let idx = self.range.start + mid;
-        if idx < self.range.end {
+        let abs_mid = self.range.start + mid;
+        if self.as_str().get(abs_mid..).is_some() {
             Some((
                 Self {
                     content: self.content.clone(),
-                    range: self.range.start..idx,
+                    range: self.range.start..abs_mid,
                 },
                 Self {
                     content: self.content.clone(),
-                    range: idx..self.range.end,
+                    range: abs_mid..self.range.end,
                 },
             ))
         } else {

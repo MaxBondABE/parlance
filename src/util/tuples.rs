@@ -7,7 +7,7 @@
 /// and last idents. When in doubt, look at the source code and/or experiment with `cargo expand`.
 ///
 /// Child macro template:
-/// 
+///
 /// ```ignore
 /// # #[macro_use] extern crate parlance;
 /// # use parlance::util::tuples::implement_for_tuples;

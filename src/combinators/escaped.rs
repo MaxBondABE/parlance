@@ -3,7 +3,15 @@ use crate::{
     parse::{Parser, ParserError},
 };
 
-fn escape<
+/// Processes escape sequences in text using a provided escape sequence parser.
+/// Repeatedly applies the escape parser to transform escaped content into its unescaped form.
+/// ```
+/// # use parlance::combinators::escaped::{escape, escape_backslash};
+/// # use parlance::parse::Parser;
+/// let parser = escape(escape_backslash!("n" "t"));
+/// let result = parser.parse(&"hello\\nworld".to_string());
+/// ```
+pub fn escape<
     I: Input + TransformContent,
     E,
     F,
@@ -24,7 +32,7 @@ where
                     output = output.append_content(o);
                     remaining = r;
                 }
-                Err(ParserError::Error(_)) => break,
+                Err(ParserError::Error(_, _)) => break,
                 Err(e) => return Err(e),
             }
         }
@@ -56,6 +64,16 @@ impl<I: Input, U: AsRef<str>> AsRef<str> for EscapeToken<I, U> {
 pub struct InvalidEscapeSequence;
 
 #[macro_export]
+/// Creates an escape sequence parser for a specific escape character and sequences.
+/// Returns a parser that recognizes unescaped text or specific escape sequences.
+/// ```
+/// # use parlance::escape_character;
+/// # use parlance::combinators::escaped::EscapeToken;
+/// # use parlance::parse::Parser;
+/// let parser = escape_character!("\\", "n" "t");
+/// assert_eq!(parser.parse(&"hello"), Ok((EscapeToken::Unescaped("hello"), "")));
+/// assert_eq!(parser.parse(&"\\n"), Ok((EscapeToken::Escaped("n"), "")));
+/// ```
 macro_rules! escape_character (
     ($esc: literal, $($seq: literal)*) => {
         {
@@ -78,6 +96,7 @@ macro_rules! escape_character (
 
                     Err($crate::parse::ParserError::Failure(
                         $crate::combinators::escaped::InvalidEscapeSequence,
+                        s.location(),
                     ))
                 } else {
                     let (o, remaining) = s.as_str()
@@ -100,6 +119,16 @@ macro_rules! escape_character (
 pub use escape_character;
 
 #[macro_export]
+/// Creates a backslash escape sequence parser for the specified sequences.
+/// Convenience macro that uses "\\" as the escape character.
+/// ```
+/// # use parlance::escape_backslash;
+/// # use parlance::combinators::escaped::EscapeToken;
+/// # use parlance::parse::Parser;
+/// let parser = escape_backslash!("n" "t" "r");
+/// assert_eq!(parser.parse(&"\\n rest"), Ok((EscapeToken::Escaped("n"), " rest")));
+/// assert_eq!(parser.parse(&"normal"), Ok((EscapeToken::Unescaped("normal"), "")));
+/// ```
 macro_rules! escape_backslash (
     ($($seq: literal)*) => {
         $crate::combinators::escaped::escape_character!("\\", $($seq)*)
@@ -176,7 +205,7 @@ mod test {
 
         assert_eq!(
             parser.parse(&"foo \\ bar"),
-            Err(ParserError::Failure(InvalidEscapeSequence))
+            Err(ParserError::Failure(InvalidEscapeSequence, ()))
         );
     }
 

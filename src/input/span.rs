@@ -8,187 +8,270 @@ use std::{
 use super::{string::SharedString, transform::TransformContent};
 use crate::{input::Input, parse::Parser, primitives::line::line};
 
-#[derive(Clone, Default)]
-pub struct Span {
-    source: Arc<Source>,
-    range: Range<usize>,
+#[derive(Clone, Debug)]
+pub enum Span {
+    Original {
+        source: Arc<Source>,
+        range: Range<usize>,
+    },
+    Transformed {
+        id: Id,
+        line: usize,
+        column: usize,
+        content: SharedString,
+    },
 }
+
 impl Span {
     pub fn new(id: impl Into<Id>, content: impl Into<String>) -> Self {
         let id = id.into();
         let content = content.into();
         let end = content.len();
 
-        Self {
+        Self::Original {
             source: Arc::new(Source::new(id, content)),
             range: 0..end,
         }
     }
+
     pub fn new_continued(
         id: impl Into<Id>,
         content: impl Into<String>,
         starting_line: usize,
     ) -> Self {
+        // FIXME zero versus 1 indexed starting line
         let id = id.into();
         let content = content.into();
         let end = content.len();
-        Self {
+        Self::Original {
             source: Arc::new(Source::new_continued(id, content, starting_line)),
             range: 0..end,
         }
     }
+
     pub fn anonymous(content: impl Into<String>) -> Self {
         Self::new(Id::default(), content)
     }
+
     pub fn id(&self) -> &Id {
-        &self.source.id
+        match self {
+            Self::Original { source, .. } => &source.id,
+            Self::Transformed { id, .. } => id,
+        }
     }
+
     pub fn position(&self) -> (usize, usize) {
-        match self.source.lines.binary_search(&self.range.start) {
-            Ok(idx) => {
-                let line = idx + 1 + self.source.starting_line;
-                let column = 1;
-                (line, column)
+        match self {
+            Self::Original { source, range } => match source.lines.binary_search(&range.start) {
+                Ok(idx) => {
+                    let line = idx + 1 + source.starting_line;
+                    let column = 1;
+                    (line, column)
+                }
+                Err(idx) => {
+                    let line = idx + source.starting_line;
+                    let column = range.start - source.lines[idx - 1] + 1;
+                    (line, column)
+                }
+            },
+            Self::Transformed { line, column, .. } => (*line, *column),
+        }
+    }
+
+    pub fn detatch(self) -> Self {
+        match self {
+            Self::Original { source, range } => {
+                let span = Self::Original { source, range };
+                let (line, column) = span.position();
+                Self::Transformed {
+                    id: span.id().clone(),
+                    line,
+                    column,
+                    content: SharedString::new(span.as_str().to_string()),
+                }
             }
-            Err(idx) => {
-                let line = idx + self.source.starting_line;
-                let column = self.range.start - self.source.lines[idx - 1] + 1;
-                (line, column)
+            transformed @ Self::Transformed { .. } => transformed,
+        }
+    }
+
+    fn new_transformed(id: &Id, line: usize, column: usize, content: String) -> Self {
+        Self::Transformed {
+            id: id.clone(),
+            line,
+            column,
+            content: SharedString::new(content),
+        }
+    }
+
+    fn with_content(&self, content: SharedString) -> Self {
+        match self {
+            Self::Transformed {
+                id, line, column, ..
+            } => Self::Transformed {
+                id: id.clone(),
+                line: *line,
+                column: *column,
+                content,
+            },
+            Self::Original { .. } => {
+                let (line, column) = self.position();
+                Self::Transformed {
+                    id: self.id().clone(),
+                    line,
+                    column,
+                    content,
+                }
             }
         }
     }
-    pub fn location(&self) -> (&Id, (usize, usize)) {
-        (self.id(), self.position())
-    }
-    pub fn detatch(self) -> TransformedSpan {
-        let (line, column) = self.position();
-        TransformedSpan::new(self.id(), line, column, self.as_str().to_string())
+}
+
+impl Default for Span {
+    fn default() -> Self {
+        Self::Original {
+            source: Default::default(),
+            range: 0..0,
+        }
     }
 }
 
 impl Input for Span {
+    type Location = (Id, (usize, usize));
+
     fn as_str(&self) -> &str {
         self.as_ref()
     }
+
+    fn location(&self) -> Self::Location {
+        (self.id().clone(), self.position())
+    }
+
     fn len(&self) -> usize {
-        self.range.len()
+        match self {
+            Self::Original { range, .. } => range.len(),
+            Self::Transformed { content, .. } => content.len(),
+        }
     }
+
     fn take_none(&self) -> Self {
-        Self {
-            source: self.source.clone(),
-            range: self.range.start..self.range.start,
+        match self {
+            Self::Original { source, range } => Self::Original {
+                source: source.clone(),
+                range: range.start..range.start,
+            },
+            Self::Transformed { .. } => self.with_content(SharedString::default()),
         }
     }
+
     fn slice(&self, subrange: Range<usize>) -> Self {
-        let start = self.range.start + subrange.start;
-        assert!(self.range.contains(&start));
-        let end = start + subrange.len();
-        assert!(end <= self.range.end);
+        match self {
+            Self::Original { source, range } => {
+                let start = range.start + subrange.start;
+                assert!(range.contains(&start));
+                let end = start + subrange.len();
+                assert!(end <= range.end);
 
-        Self {
-            source: self.source.clone(),
-            range: start..end,
+                Self::Original {
+                    source: source.clone(),
+                    range: start..end,
+                }
+            }
+            Self::Transformed { content, .. } => self.with_content(content.slice(subrange)),
         }
     }
-    fn split_at(&self, mid: usize) -> (Self, Self) {
-        let idx = self.range.start + mid;
-        assert!(idx < self.range.end);
 
-        (
-            Self {
-                source: self.source.clone(),
-                range: self.range.start..idx,
-            },
-            Self {
-                source: self.source.clone(),
-                range: idx..self.range.end,
-            },
-        )
-    }
-    fn split_at_checked(&self, mid: usize) -> Option<(Self, Self)> {
-        let abs_mid = self.range.start + mid;
-        if abs_mid >= self.range.end {
-            return None;
-        }
-        if self.as_str().split_at_checked(mid).is_none() {
-            return None;
-        }
+    fn split_at(&self, mid: usize) -> (Self, Self)
+    where
+        Self: Sized,
+    {
+        match self {
+            Self::Original { source, range } => {
+                let idx = range.start + mid;
+                assert!(idx <= range.end);
 
-        Some((
-            Self {
-                source: self.source.clone(),
-                range: self.range.start..abs_mid,
-            },
-            Self {
-                source: self.source.clone(),
-                range: abs_mid..self.range.end,
-            },
-        ))
+                (
+                    Self::Original {
+                        source: source.clone(),
+                        range: range.start..idx,
+                    },
+                    Self::Original {
+                        source: source.clone(),
+                        range: idx..range.end,
+                    },
+                )
+            }
+            Self::Transformed { content, .. } => {
+                let (a, b) = content.split_at(mid);
+                (self.with_content(a), self.with_content(b))
+            }
+        }
     }
+
+    fn split_at_checked(&self, mid: usize) -> Option<(Self, Self)>
+    where
+        Self: Sized,
+    {
+        match self {
+            Self::Original { source, range } => {
+                let abs_mid = range.start + mid;
+                if self.as_str().get(abs_mid..).is_none() {
+                    // Ensure that the midpoint is within bound & a valid unicode boundary
+                    return None;
+                }
+
+                Some((
+                    Self::Original {
+                        source: source.clone(),
+                        range: range.start..abs_mid,
+                    },
+                    Self::Original {
+                        source: source.clone(),
+                        range: abs_mid..range.end,
+                    },
+                ))
+            }
+            Self::Transformed { content, .. } => content
+                .split_at_checked(mid)
+                .map(|(a, b)| (self.with_content(a), self.with_content(b))),
+        }
+    }
+
     fn take(&self, count: usize) -> Self
     where
         Self: Sized,
     {
-        let end = self.range.start + count;
-        assert!(end <= self.range.end);
+        match self {
+            Self::Original { source, range } => {
+                let end = range.start + count;
+                assert!(end <= range.end);
 
-        Self {
-            source: self.source.clone(),
-            range: self.range.start..end,
+                Self::Original {
+                    source: source.clone(),
+                    range: range.start..end,
+                }
+            }
+            Self::Transformed { .. } => self.slice(0..count),
         }
     }
 }
+
 impl AsRef<str> for Span {
     fn as_ref(&self) -> &str {
-        &self.source.content.as_str()[self.range.clone()]
-    }
-}
-impl Debug for Span {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let (line, col) = self.position();
-        if self.range.len() == self.source.content.len() {
-            f.write_fmt(format_args!(
-                "Span {} {}:{} [ {:?} ]",
-                line,
-                col,
-                self.source.id.as_ref(),
-                self.as_str()
-            ))
-        } else if self.range.start == 0 {
-            f.write_fmt(format_args!(
-                "Span {} {}:{} [ {:?} .. ]",
-                line,
-                col,
-                self.source.id.as_ref(),
-                self.as_str()
-            ))
-        } else if self.range.end == self.source.content.len() {
-            f.write_fmt(format_args!(
-                "Span {} {}:{} [ .. {:?} ]",
-                line,
-                col,
-                self.source.id.as_ref(),
-                self.as_str()
-            ))
-        } else {
-            f.write_fmt(format_args!(
-                "Span {} {}:{} [ .. {:?} .. ]",
-                line,
-                col,
-                self.source.id.as_ref(),
-                self.as_str()
-            ))
+        match self {
+            Self::Original { source, range } => &source.content.as_str()[range.clone()],
+            Self::Transformed { content, .. } => content.as_ref(),
         }
     }
 }
 
 #[derive(Debug)]
-struct Source {
+pub struct Source {
     pub id: Id,
     pub content: String,
     pub lines: Box<[usize]>,
     pub starting_line: usize,
 }
+
 impl Source {
     pub fn new(id: Id, content: String) -> Self {
         let lines = line_indexes(&content);
@@ -199,6 +282,7 @@ impl Source {
             starting_line: 0,
         }
     }
+
     pub fn new_continued(id: Id, content: String, starting_line: usize) -> Self {
         let lines = line_indexes(&content);
         Self {
@@ -209,6 +293,7 @@ impl Source {
         }
     }
 }
+
 impl Default for Source {
     fn default() -> Self {
         Self {
@@ -223,13 +308,15 @@ impl Default for Source {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Id {
     Static(&'static str),
-    String(String),
+    String(Arc<String>),
 }
+
 impl Id {
     pub fn len(&self) -> usize {
         self.as_ref().len()
     }
 }
+
 impl AsRef<str> for Id {
     fn as_ref(&self) -> &str {
         match self {
@@ -238,21 +325,25 @@ impl AsRef<str> for Id {
         }
     }
 }
+
 impl From<&'static str> for Id {
-    fn from(v: &'static str) -> Self {
-        Self::Static(v)
+    fn from(s: &'static str) -> Self {
+        Self::Static(s)
     }
 }
+
 impl From<String> for Id {
-    fn from(v: String) -> Self {
-        Self::String(v)
+    fn from(s: String) -> Self {
+        Self::String(Arc::new(s))
     }
 }
+
 impl Display for Id {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Display::fmt(self.as_ref(), f)
     }
 }
+
 impl Default for Id {
     fn default() -> Self {
         Self::Static("")
@@ -270,93 +361,21 @@ fn line_indexes(s: &str) -> Box<[usize]> {
     lines.into_boxed_slice()
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct TransformedSpan {
-    id: Arc<Id>,
-    line: usize,
-    column: usize,
-    content: SharedString,
-}
-impl TransformedSpan {
-    pub fn new(id: &Id, line: usize, column: usize, content: String) -> Self {
-        Self {
-            id: Arc::new(id.clone()),
-            line,
-            column,
-            content: SharedString::new(content),
-        }
-    }
-
-    fn with_content(&self, content: SharedString) -> Self {
-        Self {
-            id: self.id.clone(),
-            line: self.line,
-            column: self.column,
-            content,
-        }
-    }
-}
-impl Input for TransformedSpan {
-    fn as_str(&self) -> &str {
-        self.content.as_str()
-    }
-    fn take_none(&self) -> Self {
-        self.with_content(self.content.take_none())
-    }
-    fn slice(&self, range: Range<usize>) -> Self {
-        self.with_content(self.content.slice(range))
-    }
-    fn split_at(&self, mid: usize) -> (Self, Self)
-    where
-        Self: Sized,
-    {
-        let (a, b) = self.content.split_at(mid);
-        (self.with_content(a), self.with_content(b))
-    }
-    fn split_at_checked(&self, mid: usize) -> Option<(Self, Self)>
-    where
-        Self: Sized,
-    {
-        self.content
-            .split_at_checked(mid)
-            .map(|(a, b)| (self.with_content(a), self.with_content(b)))
-    }
-}
-impl AsRef<str> for TransformedSpan {
-    fn as_ref(&self) -> &str {
-        self.as_str()
-    }
-}
-
 impl TransformContent for Span {
-    type Transformed = TransformedSpan;
-
-    fn to_content(&self, content: String) -> Self::Transformed {
-        let (line, column) = self.position();
-        TransformedSpan::new(self.id(), line, column, self.as_str().to_string())
-    }
-
-    fn append_content<T: AsRef<str>>(&self, content: T) -> Self::Transformed {
-        let (line, column) = self.position();
-        let mut s = String::with_capacity(self.len() + content.as_ref().len());
-        s.push_str(self.as_str());
-        s.push_str(content.as_ref());
-
-        TransformedSpan::new(self.id(), line, column, s)
-    }
-}
-impl TransformContent for TransformedSpan {
     type Transformed = Self;
 
-    fn to_content(&self, content: String) -> Self::Transformed {
-        self.with_content(SharedString::new(content))
+    fn to_content(&self, content: String) -> <Self as TransformContent>::Transformed {
+        let (line, column) = Span::position(self);
+        Span::new_transformed(Span::id(self), line, column, content)
     }
 
-    fn append_content<T: AsRef<str>>(&self, content: T) -> Self::Transformed {
+    fn append_content<T: AsRef<str>>(&self, content: T) -> <Self as TransformContent>::Transformed {
+        let (line, column) = Span::position(self);
         let mut s = String::with_capacity(self.len() + content.as_ref().len());
-        s.push_str(self.as_str());
+        s.push_str(Input::as_str(self));
         s.push_str(content.as_ref());
-        Self::new(&self.id, self.line, self.column, s)
+
+        Span::new_transformed(self.id(), line, column, s)
     }
 }
 
